@@ -42,10 +42,23 @@ export class UIBuilder {
       for (let j = i; j < Math.min(i + buttonsPerRow, soundsToDisplay.length); j++) {
         const sound = soundsToDisplay[j];
 
-        // Truncate title if too long (button labels max 80 chars)
-        let buttonLabel = sound.title;
+        // Clean up the title - remove "- Botón de sonido" and similar suffixes
+        let cleanTitle = sound.title
+          .replace(/\s*-\s*Botón de sonido\s*/gi, '')
+          .replace(/\s*-\s*Instant Sound Button\s*/gi, '')
+          .replace(/\s*\|\s*Myinstants\s*/gi, '')
+          .trim();
+
+        // Add number prefix (01, 02, etc.) for easy identification
+        const soundNumber = String(j + 1).padStart(2, '0');
+        let buttonLabel = `${soundNumber}. ${cleanTitle}`;
+
+        // Truncate if too long (button labels max 80 chars)
         if (buttonLabel.length > 80) {
-          buttonLabel = buttonLabel.substring(0, 77) + '...';
+          // Keep the number and truncate the title
+          const maxTitleLength = 80 - soundNumber.length - 4; // 4 for ". " and "..."
+          cleanTitle = cleanTitle.substring(0, maxTitleLength);
+          buttonLabel = `${soundNumber}. ${cleanTitle}...`;
         }
 
         const button = new ButtonBuilder()
