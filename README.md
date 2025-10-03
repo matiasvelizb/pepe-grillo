@@ -19,7 +19,7 @@ Just a Discord bot that scrapes [myinstants.com](https://myinstants.com) and pla
 
 1. Clone this repo
    ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/matiasvelizb/pepe-grillo.git
    cd pepe-grillo
    ```
 2. Copy the env file and edit it
