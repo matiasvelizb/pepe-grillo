@@ -27,7 +27,7 @@ export const config = {
 
   // Bot Configuration
   bot: {
-    maxSoundsPerGuild: 20,
+    maxSoundsPerGuild: 25, // Discord max: 5 action rows × 5 buttons per row
     autoDisconnectDelay: 15 * 60 * 1000, // 15 minutes
   },
 };

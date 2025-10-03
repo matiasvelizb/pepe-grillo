@@ -27,15 +27,20 @@ export class UIBuilder {
       return { embed, components: [] };
     }
 
-    // Create buttons (max 5 rows, 4 buttons per row = 20 max)
+    // Create buttons (max 5 rows, 5 buttons per row = 25 max)
     const components = [];
-    const buttonsPerRow = 4;
+    const buttonsPerRow = 5;
+    const maxRows = 5;
+    const maxButtons = maxRows * buttonsPerRow; // 25 buttons max
 
-    for (let i = 0; i < sounds.length; i += buttonsPerRow) {
+    // Limit sounds to display based on Discord's button constraints
+    const soundsToDisplay = sounds.slice(0, maxButtons);
+
+    for (let i = 0; i < soundsToDisplay.length; i += buttonsPerRow) {
       const row = new ActionRowBuilder();
 
-      for (let j = i; j < Math.min(i + buttonsPerRow, sounds.length); j++) {
-        const sound = sounds[j];
+      for (let j = i; j < Math.min(i + buttonsPerRow, soundsToDisplayToDisplay.length); j++) {
+        const sound = soundsToDisplay[j];
 
         // Truncate title if too long (button labels max 80 chars)
         let buttonLabel = sound.title;
