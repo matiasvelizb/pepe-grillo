@@ -50,7 +50,7 @@ class Bot {
    * Set up Discord event listeners
    */
   setupEventListeners() {
-    this.client.once('ready', async () => {
+    this.client.once('clientReady', async () => {
       Logger.info('Bot is ready', {
         botTag: this.client.user.tag,
         botId: this.client.user.id,
