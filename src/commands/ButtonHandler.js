@@ -85,6 +85,11 @@ export class ButtonHandler {
           audioBuffer,
           sound.title
         );
+
+        // Delete the status message after playing starts
+        setTimeout(async () => {
+          await interaction.deleteReply().catch(() => {});
+        }, 2000);
       } catch (error) {
         Logger.error('Failed to play audio from button', Logger.getUserContext(interaction), error);
 
