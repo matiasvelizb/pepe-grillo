@@ -162,4 +162,59 @@ export class SoundRepository {
     const sounds = await this.getSounds(guildId);
     return sounds[index] || null;
   }
+
+  /**
+   * Get a specific sound by ID
+   * @param {string} guildId - Discord guild ID
+   * @param {number} soundId - Sound ID
+   * @returns {Promise<Object|null>} - Sound record or null
+   */
+  async getSoundById(guildId, soundId) {
+    const pool = db.getPool();
+
+    try {
+      const result = await pool.query(
+        `SELECT * FROM guild_sounds
+         WHERE guild_id = $1 AND id = $2`,
+        [guildId, soundId]
+      );
+
+      return result.rows[0] || null;
+    } catch (error) {
+      Logger.error('Error getting sound by ID', { guildId, soundId }, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a specific sound by ID
+   * @param {string} guildId - Discord guild ID
+   * @param {number} soundId - Sound ID to delete
+   * @returns {Promise<boolean>} - True if deleted, false if not found
+   */
+  async deleteSound(guildId, soundId) {
+    const pool = db.getPool();
+
+    try {
+      const result = await pool.query(
+        `DELETE FROM guild_sounds
+         WHERE guild_id = $1 AND id = $2
+         RETURNING title`,
+        [guildId, soundId]
+      );
+
+      if (result.rows.length > 0) {
+        Logger.logDatabase('Sound deleted from guild', guildId, {
+          soundId,
+          title: result.rows[0].title,
+        });
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      Logger.error('Error deleting sound', { guildId, soundId }, error);
+      throw error;
+    }
+  }
 }

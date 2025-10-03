@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { UIBuilder } from '../utils/UIBuilder.js';
 import { Logger } from '../utils/logger.js';
 

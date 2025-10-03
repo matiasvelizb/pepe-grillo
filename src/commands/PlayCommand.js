@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { Logger } from '../utils/logger.js';
 
 /**
@@ -41,7 +41,7 @@ export class PlayCommand {
       if (!url.includes('myinstants.com')) {
         return interaction.reply({
           content: '❌ Please provide a valid myinstants.com URL!',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -50,7 +50,7 @@ export class PlayCommand {
       if (!voiceChannel) {
         return interaction.reply({
           content: '❌ You need to be in a voice channel first!',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -60,7 +60,7 @@ export class PlayCommand {
         return interaction.reply({
           content:
             '❌ I need permissions to join and speak in your voice channel!',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 

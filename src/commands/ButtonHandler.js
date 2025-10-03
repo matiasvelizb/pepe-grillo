@@ -1,3 +1,4 @@
+import { MessageFlags } from 'discord.js';
 import { Logger } from '../utils/logger.js';
 
 /**
@@ -33,7 +34,7 @@ export class ButtonHandler {
       if (!sound) {
         return interaction.reply({
           content: '❌ This sound is no longer available!',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -42,7 +43,7 @@ export class ButtonHandler {
       if (!voiceChannel) {
         return interaction.reply({
           content: '❌ You need to be in a voice channel first!',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -52,11 +53,11 @@ export class ButtonHandler {
         return interaction.reply({
           content:
             '❌ I need permissions to join and speak in your voice channel!',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
       // Download the sound
       let audioBuffer;
@@ -111,7 +112,7 @@ export class ButtonHandler {
       const replyMethod = interaction.deferred ? 'editReply' : 'reply';
       await interaction[replyMethod]({
         content: `❌ An error occurred: ${error.message}`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       }).catch(() => {});
     }
   }

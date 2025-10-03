@@ -8,6 +8,7 @@ import { VoiceService } from './services/VoiceService.js';
 import { PlayCommand } from './commands/PlayCommand.js';
 import { StopCommand } from './commands/StopCommand.js';
 import { SoundsCommand } from './commands/SoundsCommand.js';
+import { DeleteCommand } from './commands/DeleteCommand.js';
 import { ButtonHandler } from './commands/ButtonHandler.js';
 import { registerCommands } from './utils/register-commands.js';
 import { Logger } from './utils/logger.js';
@@ -36,6 +37,7 @@ class Bot {
     );
     this.stopCommand = new StopCommand(this.voiceService);
     this.soundsCommand = new SoundsCommand(this.soundRepository);
+    this.deleteCommand = new DeleteCommand(this.soundRepository);
     this.buttonHandler = new ButtonHandler(
       this.soundRepository,
       this.scraperService,
@@ -66,7 +68,12 @@ class Bot {
         if (interaction.isChatInputCommand()) {
           await this.handleCommand(interaction);
         } else if (interaction.isButton()) {
-          await this.buttonHandler.handle(interaction);
+          // Handle delete confirmation buttons
+          if (interaction.customId.startsWith('delete_')) {
+            await this.deleteCommand.handleConfirmation(interaction);
+          } else {
+            await this.buttonHandler.handle(interaction);
+          }
         }
       } catch (error) {
         Logger.error('Error handling interaction', {
@@ -95,6 +102,9 @@ class Bot {
         break;
       case 'sounds':
         await this.soundsCommand.execute(interaction);
+        break;
+      case 'delete':
+        await this.deleteCommand.execute(interaction);
         break;
       default:
         Logger.warn('Unknown command received', {
