@@ -1,7 +1,8 @@
-import pg from 'pg';
+import pkg from 'pg';
 import { config } from '../config/config.js';
+import { Logger } from '../utils/logger.js';
 
-const { Pool } = pg;
+const { Pool } = pkg;
 
 class DatabaseConnection {
   constructor() {
@@ -26,17 +27,20 @@ class DatabaseConnection {
 
     // Test connection
     try {
-      const client = await this.pool.connect();
-      console.log('✅ Database connected successfully');
-      client.release();
+      await this.pool.query('SELECT NOW()');
+      Logger.info('Database connected successfully', {
+        host: config.database.host,
+        database: config.database.name,
+      });
     } catch (error) {
-      console.error('❌ Database connection failed:', error.message);
+      Logger.error('Database connection failed', {}, error);
       throw error;
     }
 
-    // Handle pool errors
+    // Handle unexpected errors
     this.pool.on('error', (err) => {
-      console.error('Unexpected database error:', err);
+      Logger.error('Unexpected database error', {}, err);
+      process.exit(-1);
     });
 
     return this.pool;
@@ -45,8 +49,7 @@ class DatabaseConnection {
   async disconnect() {
     if (this.pool) {
       await this.pool.end();
-      this.pool = null;
-      console.log('Database disconnected');
+      Logger.info('Database disconnected');
     }
   }
 

@@ -1,5 +1,6 @@
 import { db } from '../database/connection.js';
 import { config } from '../config/config.js';
+import { Logger } from '../utils/logger.js';
 
 /**
  * Repository for managing guild sounds in the database
@@ -19,7 +20,10 @@ export class SoundRepository {
       // Check if sound already exists for this guild
       const isDuplicate = await this.isDuplicate(guildId, soundData.soundUrl);
       if (isDuplicate) {
-        console.log(`Sound already exists for guild ${guildId}: ${soundData.title}`);
+        Logger.info('Sound already exists in database', {
+          guildId,
+          title: soundData.title,
+        });
         return null;
       }
 
@@ -37,10 +41,13 @@ export class SoundRepository {
         [guildId, soundData.soundUrl, soundData.title, soundData.originalUrl]
       );
 
-      console.log(`✅ Added sound to guild ${guildId}: ${soundData.title}`);
+      Logger.logDatabase('Sound added to database', guildId, {
+        title: soundData.title,
+        soundId: result.rows[0].id,
+      });
       return result.rows[0];
     } catch (error) {
-      console.error('Error adding sound to database:', error.message);
+      Logger.error('Error adding sound to database', { guildId }, error);
       throw error;
     }
   }
@@ -64,7 +71,7 @@ export class SoundRepository {
 
       return result.rows;
     } catch (error) {
-      console.error('Error fetching sounds from database:', error.message);
+      Logger.error('Error fetching sounds from database', { guildId }, error);
       throw error;
     }
   }
@@ -87,7 +94,7 @@ export class SoundRepository {
 
       return parseInt(result.rows[0].count) > 0;
     } catch (error) {
-      console.error('Error checking for duplicate sound:', error.message);
+      Logger.error('Error checking for duplicate sound', { guildId }, error);
       throw error;
     }
   }
@@ -108,7 +115,7 @@ export class SoundRepository {
 
       return parseInt(result.rows[0].count);
     } catch (error) {
-      console.error('Error getting sound count:', error.message);
+      Logger.error('Error getting sound count', { guildId }, error);
       throw error;
     }
   }
@@ -135,10 +142,12 @@ export class SoundRepository {
       );
 
       if (result.rows.length > 0) {
-        console.log(`🗑️  Removed oldest sound from guild ${guildId}: ${result.rows[0].title}`);
+        Logger.logDatabase('Removed oldest sound from guild', guildId, {
+          title: result.rows[0].title,
+        });
       }
     } catch (error) {
-      console.error('Error removing oldest sound:', error.message);
+      Logger.error('Error removing oldest sound', { guildId }, error);
       throw error;
     }
   }

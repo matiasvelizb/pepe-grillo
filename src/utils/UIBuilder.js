@@ -39,7 +39,7 @@ export class UIBuilder {
     for (let i = 0; i < soundsToDisplay.length; i += buttonsPerRow) {
       const row = new ActionRowBuilder();
 
-      for (let j = i; j < Math.min(i + buttonsPerRow, soundsToDisplayToDisplay.length); j++) {
+      for (let j = i; j < Math.min(i + buttonsPerRow, soundsToDisplay.length); j++) {
         const sound = soundsToDisplay[j];
 
         // Truncate title if too long (button labels max 80 chars)

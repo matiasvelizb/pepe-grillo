@@ -10,6 +10,7 @@ import { StopCommand } from './commands/StopCommand.js';
 import { SoundsCommand } from './commands/SoundsCommand.js';
 import { ButtonHandler } from './commands/ButtonHandler.js';
 import { registerCommands } from './utils/register-commands.js';
+import { Logger } from './utils/logger.js';
 
 /**
  * Main Bot Class
@@ -50,8 +51,11 @@ class Bot {
    */
   setupEventListeners() {
     this.client.once('ready', async () => {
-      console.log(`🤖 Bot is ready! Logged in as ${this.client.user.tag}`);
-      console.log(`🎵 Ready to play sounds from myinstants.com!`);
+      Logger.info('Bot is ready', {
+        botTag: this.client.user.tag,
+        botId: this.client.user.id,
+        guildCount: this.client.guilds.cache.size,
+      });
 
       // Register slash commands
       await registerCommands();
@@ -65,7 +69,11 @@ class Bot {
           await this.buttonHandler.handle(interaction);
         }
       } catch (error) {
-        console.error('Error handling interaction:', error);
+        Logger.error('Error handling interaction', {
+          guildId: interaction.guild?.id,
+          userId: interaction.user?.id,
+          type: interaction.type,
+        }, error);
       }
     });
 
@@ -89,7 +97,10 @@ class Bot {
         await this.soundsCommand.execute(interaction);
         break;
       default:
-        console.warn(`Unknown command: ${interaction.commandName}`);
+        Logger.warn('Unknown command received', {
+          ...Logger.getUserContext(interaction),
+          commandName: interaction.commandName,
+        });
     }
   }
 
@@ -100,9 +111,9 @@ class Bot {
     try {
       await db.connect();
       await initializeDatabase();
-      console.log('✅ Database initialized successfully');
+      Logger.info('Database initialized successfully');
     } catch (error) {
-      console.error('❌ Failed to initialize database:', error);
+      Logger.error('Failed to initialize database', {}, error);
       throw error;
     }
   }
@@ -116,10 +127,10 @@ class Bot {
       await this.initializeDatabase();
 
       // Login to Discord
-      console.log('🔐 Logging in to Discord...');
+      Logger.info('Logging in to Discord...');
       await this.client.login(config.discord.token);
     } catch (error) {
-      console.error('❌ Failed to start bot:', error);
+      Logger.error('Failed to start bot', {}, error);
       await this.shutdown();
       process.exit(1);
     }
@@ -129,7 +140,7 @@ class Bot {
    * Gracefully shutdown the bot
    */
   async shutdown() {
-    console.log('\n🛑 Shutting down bot...');
+    Logger.info('Shutting down bot...');
 
     try {
       // Disconnect from all voice channels
@@ -143,10 +154,10 @@ class Bot {
       // Destroy Discord client
       this.client.destroy();
 
-      console.log('👋 Bot shut down successfully');
+      Logger.info('Bot shut down successfully');
       process.exit(0);
     } catch (error) {
-      console.error('Error during shutdown:', error);
+      Logger.error('Error during shutdown', {}, error);
       process.exit(1);
     }
   }

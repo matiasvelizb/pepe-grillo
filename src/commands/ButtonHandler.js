@@ -1,3 +1,5 @@
+import { Logger } from '../utils/logger.js';
+
 /**
  * Button interaction handler for playing sounds from the dashboard
  * Follows Single Responsibility Principle
@@ -17,6 +19,12 @@ export class ButtonHandler {
     try {
       // Button customId format: "sound_0", "sound_1", etc.
       const soundIndex = parseInt(interaction.customId.split('_')[1]);
+
+      Logger.info('Button interaction received', {
+        ...Logger.getUserContext(interaction),
+        soundIndex,
+      });
+
       const sound = await this.soundRepository.getSoundByIndex(
         interaction.guild.id,
         soundIndex
@@ -54,7 +62,13 @@ export class ButtonHandler {
       let audioBuffer;
       try {
         audioBuffer = await this.scraperService.downloadSound(sound.sound_url);
+        Logger.info('Downloaded sound from button', {
+          ...Logger.getUserContext(interaction),
+          title: sound.title,
+          bufferSize: audioBuffer.length,
+        });
       } catch (error) {
+        Logger.error('Failed to download sound from button', Logger.getUserContext(interaction), error);
         return interaction.editReply(
           `❌ Failed to download sound: ${error.message}`
         );
@@ -72,12 +86,7 @@ export class ButtonHandler {
           sound.title
         );
       } catch (error) {
-        console.error('❌ ButtonHandler - Failed to play audio:', error);
-        console.error('Error details:', {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
-        });
+        Logger.error('Failed to play audio from button', Logger.getUserContext(interaction), error);
 
         let errorMessage = `❌ Failed to play audio: ${error.message}`;
 
@@ -93,7 +102,7 @@ export class ButtonHandler {
         return interaction.editReply(errorMessage);
       }
     } catch (error) {
-      console.error('Error in button interaction:', error);
+      Logger.error('Error in button interaction', Logger.getUserContext(interaction), error);
       const replyMethod = interaction.deferred ? 'editReply' : 'reply';
       await interaction[replyMethod]({
         content: `❌ An error occurred: ${error.message}`,

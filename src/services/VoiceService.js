@@ -11,6 +11,7 @@ import { unlink } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { config } from '../config/config.js';
+import { Logger } from '../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -63,7 +64,9 @@ export class VoiceService {
         // Reuse existing connection
         connection = connectionData.connection;
         player = connectionData.player;
-        console.log('♻️  Reusing existing voice connection');
+        Logger.logVoice('Reusing existing voice connection', guildId, {
+          soundTitle,
+        });
       } else {
         // Join voice channel
         connection = joinVoiceChannel({
@@ -74,14 +77,11 @@ export class VoiceService {
 
         // Add error listener to connection
         connection.on('error', (error) => {
-          console.error(`❌ Voice connection error for guild ${guildId}:`, error);
-          console.error('Error name:', error.name);
-          console.error('Error message:', error.message);
-          console.error('Error stack:', error.stack);
+          Logger.error('Voice connection error', { guildId }, error);
         });
 
         connection.on(VoiceConnectionStatus.Disconnected, async () => {
-          console.log(`🔌 Voice connection disconnected for guild ${guildId}`);
+          Logger.logVoice('Voice connection disconnected', guildId);
           try {
             await Promise.race([
               entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
@@ -89,7 +89,7 @@ export class VoiceService {
             ]);
             // Reconnected successfully
           } catch (error) {
-            console.log(`❌ Failed to reconnect, destroying connection for guild ${guildId}`);
+            Logger.warn('Failed to reconnect, destroying connection', { guildId });
             connection.destroy();
             this.connections.delete(guildId);
           }
@@ -99,7 +99,7 @@ export class VoiceService {
         try {
           await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
         } catch (error) {
-          console.error(`❌ Failed to join voice channel for guild ${guildId}:`, error);
+          Logger.error('Failed to join voice channel', { guildId }, error);
           connection.destroy();
           await unlink(tempFile).catch(() => {});
           throw new Error(`Failed to join voice channel: ${error.message}`);
@@ -110,16 +110,11 @@ export class VoiceService {
 
         // Add comprehensive error listener to player
         player.on('error', async (error) => {
-          console.error(`❌ Audio player error for guild ${guildId}:`, error);
-          console.error('Error name:', error.name);
-          console.error('Error message:', error.message);
-          console.error('Error stack:', error.stack);
-          console.error('Resource:', error.resource);
+          Logger.error('Audio player error', { guildId }, error);
 
           // Check for specific error types
           if (error.message.includes('encryption')) {
-            console.error('🔒 ENCRYPTION ERROR DETECTED!');
-            console.error('This usually means sodium/libsodium-wrappers/tweetnacl is missing');
+            Logger.error('Encryption error detected - missing sodium/libsodium-wrappers/tweetnacl', { guildId });
           }
 
           await unlink(tempFile).catch(() => {});
@@ -128,7 +123,7 @@ export class VoiceService {
 
         // Store connection
         this.connections.set(guildId, { connection, player });
-        console.log('🔗 Created new voice connection');
+        Logger.logVoice('Created new voice connection', guildId);
       }
 
       // Create audio resource
@@ -140,12 +135,15 @@ export class VoiceService {
 
       // Handle player events
       player.once(AudioPlayerStatus.Idle, async () => {
-        console.log(`✅ Finished playing: ${soundTitle}`);
+        Logger.logVoice('Finished playing sound', guildId, { soundTitle });
         await unlink(tempFile).catch(() => {});
         this.scheduleDisconnect(guildId);
       });
 
-      console.log(`🔊 Playing: ${soundTitle}`);
+      Logger.logVoice('Started playing sound', guildId, {
+        soundTitle,
+        tempFile: path.basename(tempFile),
+      });
     } catch (error) {
       // Clean up temp file if it exists
       if (tempFile) {
@@ -153,10 +151,7 @@ export class VoiceService {
       }
 
       // Log detailed error information
-      console.error(`❌ Error in playAudio for guild ${guildId}:`, error);
-      console.error('Error name:', error.name);
-      console.error('Error message:', error.message);
-      console.error('Error stack:', error.stack);
+      Logger.error('Error in playAudio', { guildId }, error);
 
       // Re-throw with user-friendly message
       throw new Error(`Failed to play audio: ${error.message}`);
@@ -183,7 +178,7 @@ export class VoiceService {
 
     connectionData.connection.destroy();
     this.connections.delete(guildId);
-    console.log(`⏹️  Disconnected from guild ${guildId}`);
+    Logger.logVoice('Disconnected from voice channel', guildId);
     return true;
   }
 
@@ -201,11 +196,9 @@ export class VoiceService {
     const timer = setTimeout(() => {
       const connectionData = this.connections.get(guildId);
       if (connectionData) {
-        console.log(
-          `⏰ Auto-disconnecting from guild ${guildId} after ${
-            config.bot.autoDisconnectDelay / 60000
-          } minutes of inactivity`
-        );
+        Logger.logVoice('Auto-disconnecting after inactivity', guildId, {
+          inactivityMinutes: config.bot.autoDisconnectDelay / 60000,
+        });
         connectionData.connection.destroy();
         this.connections.delete(guildId);
         this.disconnectTimers.delete(guildId);

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { Logger } from '../utils/logger.js';
 
 /**
  * Service for scraping sounds from MyInstants
@@ -35,7 +36,7 @@ export class ScraperService {
       const downloadButton = $('a[download][href*="/media/sounds/"]');
       if (downloadButton.length > 0) {
         soundUrl = downloadButton.attr('href');
-        console.log('Found sound URL from download button:', soundUrl);
+        Logger.debug('Found sound URL from download button', { soundUrl });
       }
 
       // Method 2: Find the play button with onclick attribute
@@ -47,7 +48,7 @@ export class ScraperService {
           const match = onclickAttr.match(/play\('([^']+)'/);
           if (match && match[1]) {
             soundUrl = match[1];
-            console.log('Found sound URL from onclick:', soundUrl);
+            Logger.debug('Found sound URL from onclick', { soundUrl });
           }
         }
       }
@@ -57,7 +58,7 @@ export class ScraperService {
         const soundButton = $('.small-button').first();
         soundUrl = soundButton.attr('data-url');
         if (soundUrl) {
-          console.log('Found sound URL from data-url:', soundUrl);
+          Logger.debug('Found sound URL from data-url', { soundUrl });
         }
       }
 
@@ -66,7 +67,7 @@ export class ScraperService {
         const audioSource = $('source').attr('src');
         if (audioSource) {
           soundUrl = audioSource;
-          console.log('Found sound URL from audio source:', soundUrl);
+          Logger.debug('Found sound URL from audio source', { soundUrl });
         }
       }
 
@@ -88,14 +89,18 @@ export class ScraperService {
           .trim() ||
         'Unknown Sound';
 
-      console.log(`Found sound: ${title} - ${soundUrl}`);
+      Logger.info('Successfully scraped sound from MyInstants', {
+        title,
+        soundUrl,
+        sourceUrl: url,
+      });
 
       return {
         soundUrl,
         title,
       };
     } catch (error) {
-      console.error('Error scraping MyInstants:', error.message);
+      Logger.error('Error scraping MyInstants', { url }, error);
       throw new Error(`Failed to scrape sound: ${error.message}`);
     }
   }
@@ -107,6 +112,8 @@ export class ScraperService {
    */
   async downloadSound(soundUrl) {
     try {
+      Logger.debug('Downloading sound file', { soundUrl });
+
       const response = await axios.get(soundUrl, {
         responseType: 'arraybuffer',
         headers: {
@@ -115,9 +122,15 @@ export class ScraperService {
         },
       });
 
-      return Buffer.from(response.data);
+      const buffer = Buffer.from(response.data);
+      Logger.debug('Successfully downloaded sound', {
+        soundUrl,
+        bufferSize: buffer.length,
+      });
+
+      return buffer;
     } catch (error) {
-      console.error('Error downloading sound:', error.message);
+      Logger.error('Error downloading sound', { soundUrl }, error);
       throw new Error(`Failed to download sound: ${error.message}`);
     }
   }
