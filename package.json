@@ -1,30 +1,40 @@
 {
-  "name": "myinstants-discord-bot",
-  "version": "1.0.0",
-  "description": "Discord bot that plays sounds from myinstants.com",
-  "main": "index.js",
+  "name": "pepe-grillo",
+  "version": "2.0.0",
+  "description": "Discord bot that plays sounds from myinstants.com with guild-specific storage",
+  "main": "src/index.js",
   "type": "module",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node --watch index.js"
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "register": "node src/utils/register-commands.js",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f bot"
   },
   "keywords": [
     "discord",
     "bot",
     "myinstants",
-    "sound"
+    "sound",
+    "postgres"
   ],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@discordjs/opus": "^0.9.0",
-    "@discordjs/voice": "^0.16.1",
+    "@discordjs/voice": "^0.17.0",
     "axios": "^1.6.5",
     "cheerio": "^1.0.0-rc.12",
     "discord.js": "^14.14.1",
     "dotenv": "^16.3.1",
     "ffmpeg-static": "^5.2.0",
     "libsodium-wrappers": "^0.7.13",
-    "sodium-native": "^5.0.9"
+    "opusscript": "^0.1.1",
+    "pg": "^8.11.3",
+    "redis": "^4.6.13"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
   }
 }
