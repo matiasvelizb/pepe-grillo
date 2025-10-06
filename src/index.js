@@ -1,4 +1,5 @@
 import { Client, GatewayIntentBits } from 'discord.js';
+import sodium from 'libsodium-wrappers';
 import { config } from './config/config.js';
 import { db } from './database/connection.js';
 import { initializeDatabase } from './database/init.js';
@@ -12,6 +13,16 @@ import { DeleteCommand } from './commands/DeleteCommand.js';
 import { ButtonHandler } from './commands/ButtonHandler.js';
 import { registerCommands } from './utils/register-commands.js';
 import { Logger } from './utils/logger.js';
+
+await (async () => {
+  try {
+    await sodium.ready;
+    Logger.debug('Initialized libsodium for voice encryption support');
+  } catch (error) {
+    Logger.error('Failed to initialize libsodium', {}, error);
+    process.exit(1);
+  }
+})();
 
 /**
  * Main Bot Class
