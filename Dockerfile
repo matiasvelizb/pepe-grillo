@@ -1,5 +1,5 @@
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:22.12-alpine AS builder
 
 WORKDIR /app
 
@@ -10,10 +10,10 @@ RUN apk add --no-cache python3 make g++
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci --only=production
+RUN npm install --only=production
 
 # Production stage
-FROM node:20-alpine
+FROM node:22.12-alpine
 
 # Install ffmpeg and runtime dependencies
 RUN apk add --no-cache ffmpeg

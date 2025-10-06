@@ -41,6 +41,9 @@ Just a Discord bot that scrapes [myinstants.com](https://myinstants.com) and pla
    docker-compose down
    ```
 
+> [!IMPORTANT]
+> Discord now requires the bot to support the new AEAD voice encryption modes. The bundled Docker image runs on Node.js 22.12 and pre-installs `libsodium-wrappers` so you're ready to go after rebuilding the containers.
+
 ## Commands
 
 - `/play <url>` — Play and save a sound from myinstants.com
@@ -62,3 +65,4 @@ Just a Discord bot that scrapes [myinstants.com](https://myinstants.com) and pla
 - Audio doesn't play: Check FFmpeg is installed in the container, and the URL is valid
 - "Failed to scrape sound": myinstants.com changed, or bad URL
 - Bot is offline: Check your token in `.env` and that the container is running
+- "No compatible encryption modes": Rebuild the containers (`docker-compose up -d --build`) so they pick up the Node.js 22.12 base image and updated dependencies, or ensure your custom runtime includes Node.js ≥ 22.12 with either native AES-GCM support or one of the supported sodium libraries.
