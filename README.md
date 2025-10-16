@@ -2,6 +2,8 @@
 
 Discord bot that scrapes sounds from [myinstants.com](https://myinstants.com) and plays them in voice channels.
 
+![Dashboard Example](/docs/example.png)
+
 ## What It Does
 
 - Scrapes and plays sounds from myinstants.com
