@@ -4,6 +4,7 @@ import { config } from './config/config.js';
 import { db } from './database/connection.js';
 import { initializeDatabase } from './database/init.js';
 import { SoundRepository } from './database/SoundRepository.js';
+import { CacheService } from './database/CacheService.js';
 import { ScraperService } from './myinstants/ScraperService.js';
 import { VoiceService } from './discord/services/VoiceService.js';
 import { DashboardService } from './discord/services/DashboardService.js';
@@ -40,10 +41,11 @@ class Bot {
 
     // Initialize services (Dependency Injection)
     this.soundRepository = new SoundRepository();
+    this.cacheService = new CacheService();
     this.scraperService = new ScraperService();
     this.voiceService = new VoiceService();
     this.dashboardService = new DashboardService(this.soundRepository, this.client);
-    this.audioService = new AudioService(this.scraperService, this.voiceService);
+    this.audioService = new AudioService(this.scraperService, this.voiceService, this.cacheService);
 
     // Initialize command handlers
     this.playCommand = new PlayCommand(
@@ -177,6 +179,10 @@ class Bot {
       // Initialize database first
       await this.initializeDatabase();
 
+      // Connect to Redis cache
+      Logger.info('Connecting to Redis cache...');
+      await this.cacheService.connect();
+
       // Login to Discord
       Logger.info('Logging in to Discord...');
       await this.client.login(config.discord.token);
@@ -198,6 +204,9 @@ class Bot {
       for (const [guildId] of this.voiceService.connections) {
         this.voiceService.disconnect(guildId);
       }
+
+      // Disconnect from Redis cache
+      await this.cacheService.disconnect();
 
       // Disconnect from database
       await db.disconnect();

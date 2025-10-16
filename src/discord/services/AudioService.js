@@ -6,9 +6,10 @@ import { Logger } from '../../utils/logger.js';
  * Follows Single Responsibility Principle - only handles audio playback logic
  */
 export class AudioService {
-  constructor(scraperService, voiceService) {
+  constructor(scraperService, voiceService, cacheService) {
     this.scraperService = scraperService;
     this.voiceService = voiceService;
+    this.cacheService = cacheService;
   }
 
   /**
@@ -81,19 +82,33 @@ export class AudioService {
         voiceChannel = soundIdOrVoiceChannel;
       }
 
-      // Download the sound
+      // Try to get from cache first, download if cache miss
       let audioBuffer;
+      let fromCache = false;
       try {
-        audioBuffer = await this.scraperService.downloadSound(sound.sound_url);
-        Logger.info('Downloaded sound for playback', {
-          ...Logger.getUserContext(interaction),
-          title: sound.title,
-          bufferSize: audioBuffer.length,
-        });
+        // Check Redis cache first
+        audioBuffer = await this.cacheService.getAudio(sound.sound_url);
+
+        if (audioBuffer) {
+          fromCache = true;
+          Logger.info('Retrieved sound from cache', {
+            ...Logger.getUserContext(interaction),
+            title: sound.title,
+            bufferSize: audioBuffer.length,
+          });
+        } else {
+          // Cache miss - download from MyInstants
+          audioBuffer = await this.scraperService.downloadSound(sound.sound_url);
+          Logger.info('Downloaded sound from MyInstants (cache miss)', {
+            ...Logger.getUserContext(interaction),
+            title: sound.title,
+            bufferSize: audioBuffer.length,
+          });
+        }
       } catch (error) {
-        Logger.error('Failed to download sound', Logger.getUserContext(interaction), error);
+        Logger.error('Failed to get sound', Logger.getUserContext(interaction), error);
         await interaction.editReply(
-          `❌ Failed to download sound: ${error.message}`
+          `❌ Failed to get sound: ${error.message}`
         );
         return false;
       }
@@ -109,6 +124,13 @@ export class AudioService {
           audioBuffer,
           sound.title
         );
+
+        // Cache for next time AFTER playing starts (non-blocking)
+        if (!fromCache) {
+          this.cacheService.setAudio(sound.sound_url, audioBuffer).catch((error) => {
+            Logger.error('Failed to cache audio (non-critical)', { soundUrl: sound.sound_url }, error);
+          });
+        }
 
         // Delete the status message after playing starts
         setTimeout(async () => {
