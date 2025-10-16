@@ -4,14 +4,17 @@ import { config } from './config/config.js';
 import { db } from './database/connection.js';
 import { initializeDatabase } from './database/init.js';
 import { SoundRepository } from './database/SoundRepository.js';
-import { ScraperService } from './services/ScraperService.js';
-import { VoiceService } from './services/VoiceService.js';
-import { PlayCommand } from './commands/PlayCommand.js';
-import { StopCommand } from './commands/StopCommand.js';
-import { SoundsCommand } from './commands/SoundsCommand.js';
-import { DeleteCommand } from './commands/DeleteCommand.js';
-import { ButtonHandler } from './commands/ButtonHandler.js';
-import { registerCommands } from './utils/register-commands.js';
+import { ScraperService } from './myinstants/ScraperService.js';
+import { VoiceService } from './discord/services/VoiceService.js';
+import { DashboardService } from './discord/services/DashboardService.js';
+import { AudioService } from './discord/services/AudioService.js';
+import { PlayCommand } from './discord/commands/PlayCommand.js';
+import { StopCommand } from './discord/commands/StopCommand.js';
+import { SoundsCommand } from './discord/commands/SoundsCommand.js';
+import { DeleteCommand } from './discord/commands/DeleteCommand.js';
+import { PaginationHandler } from './discord/handlers/PaginationHandler.js';
+import { SelectMenuHandler } from './discord/handlers/SelectMenuHandler.js';
+import { registerCommands } from './discord/utils/register-commands.js';
 import { Logger } from './utils/logger.js';
 
 await (async () => {
@@ -39,21 +42,23 @@ class Bot {
     this.soundRepository = new SoundRepository();
     this.scraperService = new ScraperService();
     this.voiceService = new VoiceService();
+    this.dashboardService = new DashboardService(this.soundRepository, this.client);
+    this.audioService = new AudioService(this.scraperService, this.voiceService);
 
     // Initialize command handlers
     this.playCommand = new PlayCommand(
       this.scraperService,
       this.voiceService,
-      this.soundRepository
+      this.soundRepository,
+      this.dashboardService
     );
     this.stopCommand = new StopCommand(this.voiceService);
-    this.soundsCommand = new SoundsCommand(this.soundRepository);
-    this.deleteCommand = new DeleteCommand(this.soundRepository);
-    this.buttonHandler = new ButtonHandler(
-      this.soundRepository,
-      this.scraperService,
-      this.voiceService
-    );
+    this.soundsCommand = new SoundsCommand(this.soundRepository, this.dashboardService);
+    this.deleteCommand = new DeleteCommand(this.soundRepository, this.dashboardService);
+
+    // Initialize interaction handlers
+    this.paginationHandler = new PaginationHandler(this.soundRepository);
+    this.selectMenuHandler = new SelectMenuHandler(this.soundRepository, this.audioService);
 
     // Set up event listeners
     this.setupEventListeners();
@@ -72,6 +77,9 @@ class Bot {
 
       // Register slash commands
       await registerCommands();
+
+      // Start dashboard cleanup task
+      this.dashboardService.startCleanupTask();
     });
 
     this.client.on('interactionCreate', async (interaction) => {
@@ -79,11 +87,33 @@ class Bot {
         if (interaction.isChatInputCommand()) {
           await this.handleCommand(interaction);
         } else if (interaction.isButton()) {
-          // Handle delete confirmation buttons
-          if (interaction.customId.startsWith('delete_')) {
+          // Handle delete confirmation buttons (delete_confirm_X or delete_cancel_X)
+          if (interaction.customId.startsWith('delete_confirm_') ||
+              interaction.customId.startsWith('delete_cancel_')) {
             await this.deleteCommand.handleConfirmation(interaction);
-          } else {
-            await this.buttonHandler.handle(interaction);
+          }
+          // Handle delete sound button in BUTTONS mode (delete_sound_X)
+          else if (interaction.customId.startsWith('delete_sound_')) {
+            await this.deleteCommand.handleDelete(interaction);
+          }
+          // Handle play sound button in BUTTONS mode (play_sound_X)
+          else if (interaction.customId.startsWith('play_sound_')) {
+            // Extract sound ID and play directly
+            const soundId = parseInt(interaction.customId.split('_')[2]);
+            await this.audioService.playSound(interaction, soundId);
+          }
+          // Handle pagination buttons
+          else if (interaction.customId.startsWith('page_')) {
+            await this.paginationHandler.handle(interaction);
+          }
+        } else if (interaction.isStringSelectMenu()) {
+          // Handle sound selection from select menus (sound_select_page_X)
+          if (interaction.customId.startsWith('sound_select_')) {
+            await this.selectMenuHandler.handle(interaction);
+          }
+          // Handle delete sound selection from select menu (delete_select_page_X)
+          else if (interaction.customId.startsWith('delete_select_')) {
+            await this.deleteCommand.handleDelete(interaction);
           }
         }
       } catch (error) {

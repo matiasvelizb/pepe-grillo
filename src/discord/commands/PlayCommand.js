@@ -1,15 +1,16 @@
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
-import { Logger } from '../utils/logger.js';
+import { Logger } from '../../utils/logger.js';
 
 /**
  * Play command - Plays a sound from MyInstants and saves it to the guild
  * Follows Command Pattern - encapsulates all logic for this command
  */
 export class PlayCommand {
-  constructor(scraperService, voiceService, soundRepository) {
+  constructor(scraperService, voiceService, soundRepository, dashboardService = null) {
     this.scraperService = scraperService;
     this.voiceService = voiceService;
     this.soundRepository = soundRepository;
+    this.dashboardService = dashboardService;
   }
 
   /**
@@ -132,6 +133,15 @@ export class PlayCommand {
             title: soundData.title,
             originalUrl: url,
           });
+
+          // Refresh all active dashboards for this guild
+          if (this.dashboardService) {
+            await this.dashboardService.refreshDashboards(interaction.guild.id);
+            Logger.info('Dashboards refreshed after adding new sound', {
+              ...Logger.getUserContext(interaction),
+              title: soundData.title,
+            });
+          }
         } catch (error) {
           Logger.error('Failed to save sound to database', Logger.getUserContext(interaction), error);
           // Continue anyway, don't fail the command

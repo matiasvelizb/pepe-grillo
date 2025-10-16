@@ -1,7 +1,7 @@
 {
   "name": "pepe-grillo",
   "version": "2.0.0",
-  "description": "Discord bot that plays sounds from myinstants.com with guild-specific storage",
+  "description": "Discord bot that plays sounds from myinstants.com with guild-specific storage and interactive UI",
   "main": "src/index.js",
   "type": "module",
   "scripts": {

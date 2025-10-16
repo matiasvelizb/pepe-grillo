@@ -27,7 +27,8 @@ export const config = {
 
   // Bot Configuration
   bot: {
-    maxSoundsPerGuild: 25, // Discord max: 5 action rows × 5 buttons per row
+    maxSoundsPerGuild: 100, // Maximum sounds per guild
     autoDisconnectDelay: 15 * 60 * 1000, // 15 minutes
+    uiType: (process.env.UI_TYPE || 'BUTTONS').toUpperCase(), // 'BUTTONS' or 'SELECT'
   },
 };

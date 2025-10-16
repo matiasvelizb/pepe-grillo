@@ -1,5 +1,5 @@
 import { REST, Routes } from 'discord.js';
-import { config } from '../config/config.js';
+import { config } from '../../config/config.js';
 import { PlayCommand } from '../commands/PlayCommand.js';
 import { StopCommand } from '../commands/StopCommand.js';
 import { SoundsCommand } from '../commands/SoundsCommand.js';

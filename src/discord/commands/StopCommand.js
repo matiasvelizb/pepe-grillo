@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
-import { Logger } from '../utils/logger.js';
+import { Logger } from '../../utils/logger.js';
 
 /**
  * Stop command - Stops playback and leaves voice channel
@@ -33,7 +33,7 @@ export class StopCommand {
         Logger.info('Stop command called but bot not connected', Logger.getUserContext(interaction));
         return interaction.reply({
           content: "❌ I'm not playing anything right now!",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -41,13 +41,13 @@ export class StopCommand {
 
       await interaction.reply({
         content: '⏹️ Stopped playing and left the voice channel.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     } catch (error) {
       Logger.error('Error in stop command', Logger.getUserContext(interaction), error);
       await interaction.reply({
         content: `❌ An error occurred: ${error.message}`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       }).catch(() => {});
     }
   }

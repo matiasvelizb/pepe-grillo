@@ -10,8 +10,8 @@ import { createWriteStream } from 'fs';
 import { unlink } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { config } from '../config/config.js';
-import { Logger } from '../utils/logger.js';
+import { config } from '../../config/config.js';
+import { Logger } from '../../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,7 +42,7 @@ export class VoiceService {
 
     try {
       // Save to temporary file
-      tempFile = path.join(__dirname, '..', '..', 'temp', `temp_${Date.now()}.mp3`);
+      tempFile = path.join(__dirname, '..', '..', '..', 'temp', `temp_${Date.now()}.mp3`);
       const writeStream = createWriteStream(tempFile);
       writeStream.write(audioBuffer);
       writeStream.end();

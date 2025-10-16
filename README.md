@@ -7,13 +7,14 @@ Just a Discord bot that scrapes [myinstants.com](https://myinstants.com) and pla
 
 ## Features
 
-- Play sounds from myinstants.com in voice channels
-- Save up to 25 sounds per server
-- Shows a dashboard with your saved sounds
-- Delete saved sounds with a command or automatically the oldest when limit is reached
-- Ignores duplicates
-- Auto-disconnects after 15 minutes of inactivity
-- Docker only (PostgreSQL + Redis included)
+- 🎵 Play sounds from myinstants.com in voice channels
+- 💾 Save up to **100 sounds per server** (increased from 25!)
+- 📋 **Smart select menu dashboard** with pagination (replaces button UI)
+- 🔄 **Auto-refreshing dashboards** - updates when sounds are added/deleted
+- 🗑️ Delete saved sounds with a command or automatically the oldest when limit is reached
+- 🚫 Ignores duplicates
+- ⏱️ Auto-disconnects after 15 minutes of inactivity
+- 🐳 Docker only (PostgreSQL + Redis included)
 
 ## Setup (Docker Only)
 
@@ -47,9 +48,36 @@ Just a Discord bot that scrapes [myinstants.com](https://myinstants.com) and pla
 ## Commands
 
 - `/play <url>` — Play and save a sound from myinstants.com
-- `/sounds` — Show your saved sounds
-- `/delete <id>` — Delete a saved sound by its ID (from `/sounds` list)
+- `/sounds` — Show your saved sounds in an interactive select menu with pagination
+- `/delete` — Delete a sound using an interactive select menu (no need to remember numbers!)
 - `/stop` — Stop playback and leave voice channel
+
+## What's New in v2.0.0
+
+### 🎉 Unified UI System
+- **100 sounds per server** (up from 25)
+- **Configurable UI** - Choose between BUTTONS or SELECT menus via `.env`
+- **Pagination** - navigate through 4 pages of sounds (25 per page)
+- **Auto-refresh** - dashboards update automatically when sounds are added/deleted
+- **SOLID architecture** - unified `UIBuilder` with DRY principles
+- **Both /sounds and /delete** - use the same UI system and pagination
+
+### 📖 Documentation
+- See [`docs/unified-ui-system.md`](docs/unified-ui-system.md) for complete system overview
+- See [`docs/migration-guide.md`](docs/migration-guide.md) for upgrade instructions from v1.x
+- See [`docs/DEPLOYMENT_GUIDE.md`](docs/DEPLOYMENT_GUIDE.md) for deployment instructions
+
+### ⚙️ Configuration
+
+Choose your preferred UI type in `.env`:
+
+```bash
+# BUTTONS: Classic 5x5 grid interface (default)
+UI_TYPE=BUTTONS
+
+# SELECT: Modern dropdown menus (more compact)
+UI_TYPE=SELECT
+```
 
 ## How It Works
 
