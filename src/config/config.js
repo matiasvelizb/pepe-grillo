@@ -25,9 +25,17 @@ export const config = {
     port: parseInt(process.env.REDIS_PORT) || 6379,
   },
 
+  // FlareSolverr Configuration (Cloudflare challenge solver)
+  flaresolverr: {
+    url: process.env.FLARESOLVERR_URL || '',
+    enabled: process.env.FLARESOLVERR_ENABLED !== 'false',
+    maxTimeout: parseInt(process.env.FLARESOLVERR_MAX_TIMEOUT) || 60000,
+    sessionName: process.env.FLARESOLVERR_SESSION || 'pepe-grillo',
+  },
+
   // Bot Configuration
   bot: {
-    maxSoundsPerGuild: 100, // Maximum sounds per guild
+    maxSoundsPerGuild: 200, // Maximum sounds per guild
     autoDisconnectDelay: 15 * 60 * 1000, // 15 minutes
     uiType: (process.env.UI_TYPE || 'BUTTONS').toUpperCase(), // 'BUTTONS' or 'SELECT'
   },

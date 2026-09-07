@@ -205,6 +205,9 @@ class Bot {
         this.voiceService.disconnect(guildId);
       }
 
+      // Release the FlareSolverr browser session
+      await this.scraperService.flareSolverr.destroySession();
+
       // Disconnect from Redis cache
       await this.cacheService.disconnect();
 

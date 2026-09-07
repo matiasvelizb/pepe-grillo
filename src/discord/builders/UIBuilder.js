@@ -101,8 +101,8 @@ export class UIBuilder {
       const soundNumber = String(absoluteIndex + 1).padStart(3, '0');
       let optionLabel = `${soundNumber}. ${cleanTitle}`;
 
-      if (optionLabel.length > 100) {
-        optionLabel = `${soundNumber}. ${cleanTitle.substring(0, 100 - soundNumber.length - 7)}...`;
+      if (optionLabel.length > 200) {
+        optionLabel = `${soundNumber}. ${cleanTitle.substring(0, 200 - soundNumber.length - 7)}...`;
       }
 
       const option = new StringSelectMenuOptionBuilder()

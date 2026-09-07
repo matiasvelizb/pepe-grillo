@@ -1,5 +1,6 @@
-import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { FlareSolverrClient } from './FlareSolverrClient.js';
+import { HttpClient } from './HttpClient.js';
 import { Logger } from '../utils/logger.js';
 
 /**
@@ -7,6 +8,51 @@ import { Logger } from '../utils/logger.js';
  * Follows Single Responsibility Principle - only handles web scraping
  */
 export class ScraperService {
+  /**
+   * @param {HttpClient} [httpClient] - Chrome-impersonating HTTP client
+   * @param {FlareSolverrClient} [flareSolverr] - Challenge solver, used as fallback
+   */
+  constructor(httpClient = new HttpClient(), flareSolverr = new FlareSolverrClient()) {
+    this.http = httpClient;
+    this.flareSolverr = flareSolverr;
+  }
+
+  /**
+   * Cookies obtained by FlareSolverr, if it has solved a challenge this run
+   * @returns {object} - Headers to merge into a request
+   */
+  buildHeaders() {
+    const cookieHeader = this.flareSolverr.getCookieHeader();
+    return cookieHeader ? { Cookie: cookieHeader } : {};
+  }
+
+  /**
+   * Fetches a page's HTML, falling back to FlareSolverr when Cloudflare
+   * escalates to a JavaScript challenge that the HTTP client cannot solve
+   * @param {string} url - The page URL
+   * @returns {Promise<string>} - The page HTML
+   */
+  async fetchPage(url) {
+    try {
+      return await this.http.getText(url, this.buildHeaders());
+    } catch (error) {
+      if (
+        !HttpClient.isCloudflareBlock(error.status) ||
+        !this.flareSolverr.isEnabled()
+      ) {
+        throw error;
+      }
+
+      Logger.info('Request blocked, retrying through FlareSolverr', {
+        url,
+        status: error.status,
+      });
+
+      const solution = await this.flareSolverr.get(url);
+      return solution.html;
+    }
+  }
+
   /**
    * Scrapes a MyInstants sound URL and extracts the audio file URL
    * @param {string} url - The MyInstants page URL
@@ -20,15 +66,10 @@ export class ScraperService {
       }
 
       // Fetch the page
-      const response = await axios.get(url, {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        },
-      });
+      const html = await this.fetchPage(url);
 
       // Parse HTML with cheerio
-      const $ = cheerio.load(response.data);
+      const $ = cheerio.load(html);
 
       let soundUrl = null;
 
@@ -41,7 +82,7 @@ export class ScraperService {
 
       // Method 2: Find the play button with onclick attribute
       if (!soundUrl) {
-        const soundButton = $('.small-button').first();
+        const soundButton = $('.small-button, .large-button').first();
         const onclickAttr = soundButton.attr('onclick');
 
         if (onclickAttr) {
@@ -55,7 +96,7 @@ export class ScraperService {
 
       // Method 3: Try data-url attribute
       if (!soundUrl) {
-        const soundButton = $('.small-button').first();
+        const soundButton = $('.small-button, .large-button').first();
         soundUrl = soundButton.attr('data-url');
         if (soundUrl) {
           Logger.debug('Found sound URL from data-url', { soundUrl });
@@ -68,6 +109,14 @@ export class ScraperService {
         if (audioSource) {
           soundUrl = audioSource;
           Logger.debug('Found sound URL from audio source', { soundUrl });
+        }
+      }
+
+      // Method 5: Fall back to the Open Graph audio metadata
+      if (!soundUrl) {
+        soundUrl = $('meta[property="og:audio"]').attr('content');
+        if (soundUrl) {
+          Logger.debug('Found sound URL from og:audio', { soundUrl });
         }
       }
 
@@ -107,6 +156,9 @@ export class ScraperService {
 
   /**
    * Downloads the audio file to a buffer
+   *
+   * FlareSolverr cannot proxy binary responses, so a blocked download is retried
+   * with the clearance cookies obtained by solving a page on the same origin.
    * @param {string} soundUrl - Direct URL to the audio file
    * @returns {Promise<Buffer>} - Audio file as a buffer
    */
@@ -114,15 +166,28 @@ export class ScraperService {
     try {
       Logger.debug('Downloading sound file', { soundUrl });
 
-      const response = await axios.get(soundUrl, {
-        responseType: 'arraybuffer',
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
-      });
+      let buffer;
+      try {
+        buffer = await this.http.getBuffer(soundUrl, this.buildHeaders());
+      } catch (error) {
+        if (
+          !HttpClient.isCloudflareBlock(error.status) ||
+          !this.flareSolverr.isEnabled()
+        ) {
+          throw error;
+        }
 
-      const buffer = Buffer.from(response.data);
+        Logger.info('Download blocked, refreshing clearance via FlareSolverr', {
+          soundUrl,
+          status: error.status,
+        });
+
+        // Solve a challenge on the origin so we get fresh cf_clearance cookies
+        await this.flareSolverr.get(new URL(soundUrl).origin);
+
+        buffer = await this.http.getBuffer(soundUrl, this.buildHeaders());
+      }
+
       Logger.debug('Successfully downloaded sound', {
         soundUrl,
         bufferSize: buffer.length,

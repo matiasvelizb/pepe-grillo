@@ -70,6 +70,10 @@ DB_PORT=5432
 REDIS_HOST=redis
 REDIS_PORT=6379
 
+# FlareSolverr (Cloudflare challenge solver, set automatically by Docker Compose)
+FLARESOLVERR_URL=http://flaresolverr:8191
+FLARESOLVERR_ENABLED=true
+
 # UI Type (BUTTONS or SELECT)
 UI_TYPE=BUTTONS
 
