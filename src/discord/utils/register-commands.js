@@ -1,62 +1,20 @@
 import { REST, Routes } from 'discord.js';
 import { config } from '../../config/config.js';
-import { PlayCommand } from '../commands/PlayCommand.js';
-import { StopCommand } from '../commands/StopCommand.js';
-import { SoundsCommand } from '../commands/SoundsCommand.js';
-import { DeleteCommand } from '../commands/DeleteCommand.js';
+import { Logger } from '../../utils/logger.js';
 
 /**
- * Utility to register slash commands with Discord
+ * Register slash commands: to GUILD_ID instantly if set, otherwise globally (up to 1 hour)
+ * @param {Array<{definition: import('discord.js').SlashCommandBuilder}>} commandClasses
  */
-async function registerCommands() {
-  // Create dummy instances just to get command definitions
-  const playCommand = new PlayCommand(null, null, null);
-  const stopCommand = new StopCommand(null);
-  const soundsCommand = new SoundsCommand(null);
-  const deleteCommand = new DeleteCommand(null);
-
-  const commands = [
-    playCommand.definition.toJSON(),
-    stopCommand.definition.toJSON(),
-    soundsCommand.definition.toJSON(),
-    deleteCommand.definition.toJSON(),
-  ];
-
+export async function registerCommands(commandClasses) {
+  const body = commandClasses.map((command) => command.definition.toJSON());
   const rest = new REST({ version: '10' }).setToken(config.discord.token);
+  const { clientId, guildId } = config.discord;
 
-  try {
-    console.log('🔄 Registering slash commands...');
+  const route = guildId
+    ? Routes.applicationGuildCommands(clientId, guildId)
+    : Routes.applicationCommands(clientId);
 
-    if (config.discord.guildId) {
-      // Register to specific guild (instant)
-      console.log(`📍 Registering to guild: ${config.discord.guildId}`);
-      await rest.put(
-        Routes.applicationGuildCommands(
-          config.discord.clientId,
-          config.discord.guildId
-        ),
-        { body: commands }
-      );
-      console.log('✅ Guild commands registered! They should appear immediately.');
-    } else {
-      // Register globally (takes up to 1 hour)
-      console.log('🌍 Registering globally (may take up to 1 hour)...');
-      await rest.put(Routes.applicationCommands(config.discord.clientId), {
-        body: commands,
-      });
-      console.log('✅ Global commands registered!');
-    }
-  } catch (error) {
-    console.error('❌ Error registering commands:', error);
-    throw error;
-  }
+  await rest.put(route, { body });
+  Logger.info(`Registered ${body.length} slash commands ${guildId ? `to guild ${guildId}` : 'globally'}`);
 }
-
-// Run if called directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  registerCommands()
-    .then(() => process.exit(0))
-    .catch(() => process.exit(1));
-}
-
-export { registerCommands };

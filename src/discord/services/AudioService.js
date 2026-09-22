@@ -1,178 +1,114 @@
-import { MessageFlags } from 'discord.js';
+import { MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { Logger } from '../../utils/logger.js';
-import { UIBuilder } from '../builders/UIBuilder.js';
+import { cleanTitle } from '../builders/SoundboardView.js';
 
 /**
- * Audio playback service with validation and error handling
- * Follows Single Responsibility Principle - only handles audio playback logic
+ * Plays saved sounds: checks voice access, fetches audio from disk (downloading once), counts plays
  */
 export class AudioService {
-  constructor(scraperService, voiceService, cacheService) {
+  constructor(soundRepository, scraperService, voiceService, audioStore) {
+    this.soundRepository = soundRepository;
     this.scraperService = scraperService;
     this.voiceService = voiceService;
-    this.cacheService = cacheService;
+    this.audioStore = audioStore;
   }
 
   /**
-   * Validate voice channel access and permissions
-   * @param {Object} interaction - Discord interaction
-   * @param {Object} play - PLAY log context ({ sound, via })
-   * @returns {Object|null} - Voice channel if valid, null otherwise (reply sent)
+   * The member's voice channel, if the bot can join and speak there
+   * @returns {{channel?: Object, error?: string}}
    */
-  async validateVoiceAccess(interaction, play = {}) {
-    // Check if user is in a voice channel
-    const voiceChannel = interaction.member.voice.channel;
-    if (!voiceChannel) {
-      Logger.activity('PLAY', 'ERROR', interaction, { ...play, reason: 'User not in a voice channel' });
-      await interaction.reply({
-        content: '❌ You need to be in a voice channel first!',
-        flags: MessageFlags.Ephemeral,
-      });
-      return null;
+  resolveVoiceChannel(interaction) {
+    const channel = interaction.member?.voice?.channel;
+    if (!channel) {
+      return { error: 'You need to be in a voice channel first!' };
     }
 
-    // Check bot permissions
-    const permissions = voiceChannel.permissionsFor(interaction.client.user);
-    if (!permissions.has('Connect') || !permissions.has('Speak')) {
-      Logger.activity('PLAY', 'ERROR', interaction, {
-        ...play,
-        channel: voiceChannel.name,
-        reason: 'Missing Connect/Speak permission',
-      });
-      await interaction.reply({
-        content: '❌ I need permissions to join and speak in your voice channel!',
-        flags: MessageFlags.Ephemeral,
-      });
-      return null;
+    const permissions = channel.permissionsFor(interaction.client.user);
+    if (!permissions?.has([PermissionFlagsBits.Connect, PermissionFlagsBits.Speak])) {
+      return { channel, error: 'I need permission to join and speak in your voice channel!' };
     }
 
-    return voiceChannel;
+    return { channel };
   }
 
   /**
-   * Download and play a sound in a voice channel
-   * @param {Object} interaction - Discord interaction
-   * @param {number|Object} soundIdOrVoiceChannel - Sound ID or voice channel
-   * @param {Object} sound - Optional sound object (when called with voiceChannel)
-   * @returns {Promise<boolean>} - True if successful, false otherwise
+   * Local path of a sound's audio, downloading it from MyInstants the first time
+   * @param {string} soundUrl
+   * @returns {Promise<string>}
    */
-  async playSound(interaction, soundIdOrVoiceChannel, sound = null) {
-    const play = { via: typeof soundIdOrVoiceChannel === 'number' ? 'button' : 'select' };
+  async getAudioPath(soundUrl) {
+    if (this.audioStore.has(soundUrl)) {
+      return this.audioStore.pathFor(soundUrl);
+    }
+    const buffer = await this.scraperService.downloadSound(soundUrl);
+    return this.audioStore.save(soundUrl, buffer);
+  }
+
+  /**
+   * Delete a sound's audio file once no guild has it saved anymore
+   */
+  async releaseAudio(soundUrl) {
+    if (!this.soundRepository.isAudioUsed(soundUrl)) {
+      await this.audioStore.remove(soundUrl);
+    }
+  }
+
+  /**
+   * Play a saved sound and log the result
+   * @param {Object} interaction - Discord interaction (for logging)
+   * @param {Object} channel - Voice channel
+   * @param {Object} sound - Sound row
+   * @param {string} via - '/play' or 'button'
+   * @returns {Promise<string|null>} - Error message, or null on success
+   */
+  async play(interaction, channel, sound, via) {
+    const context = { via, sound: cleanTitle(sound.title), channel: channel.name };
 
     try {
-      let voiceChannel;
-
-      // Handle two calling patterns:
-      // 1. playSound(interaction, soundId) - from button clicks (uses DB ID)
-      // 2. playSound(interaction, voiceChannel, sound) - from select menu
-      if (typeof soundIdOrVoiceChannel === 'number') {
-        // Pattern 1: Called with soundId
-        const soundId = soundIdOrVoiceChannel;
-
-        // Validate voice access
-        voiceChannel = await this.validateVoiceAccess(interaction, play);
-        if (!voiceChannel) {
-          return false; // Error reply already sent
-        }
-
-        // Defer reply since this takes time
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-        // Fetch sound from database by ID
-        const SoundRepository = (await import('../../database/SoundRepository.js')).SoundRepository;
-        const soundRepo = new SoundRepository();
-        sound = await soundRepo.getSoundById(interaction.guild.id, soundId);
-
-        if (!sound) {
-          Logger.activity('PLAY', 'ERROR', interaction, { ...play, reason: 'Sound not found' });
-          await interaction.editReply('❌ Sound not found!');
-          return false;
-        }
-      } else {
-        // Pattern 2: Called with voiceChannel and sound
-        voiceChannel = soundIdOrVoiceChannel;
-      }
-
-      play.sound = UIBuilder.cleanTitle(sound.title);
-      play.channel = voiceChannel.name;
-
-      // Try to get from cache first, download if cache miss
-      let audioBuffer;
-      let fromCache = false;
-      try {
-        // Check Redis cache first
-        audioBuffer = await this.cacheService.getAudio(sound.sound_url);
-
-        if (audioBuffer) {
-          fromCache = true;
-          Logger.debug('Retrieved sound from cache', {
-            ...Logger.getUserContext(interaction),
-            title: sound.title,
-            bufferSize: audioBuffer.length,
-          });
-        } else {
-          // Cache miss - download from MyInstants
-          audioBuffer = await this.scraperService.downloadSound(sound.sound_url);
-          Logger.debug('Downloaded sound from MyInstants (cache miss)', {
-            ...Logger.getUserContext(interaction),
-            title: sound.title,
-            bufferSize: audioBuffer.length,
-          });
-        }
-      } catch (error) {
-        Logger.activity('PLAY', 'ERROR', interaction, { ...play, reason: `Download failed: ${error.message}` });
-        await interaction.editReply(
-          `❌ Failed to get sound: ${error.message}`
-        );
-        return false;
-      }
-
-      await interaction.editReply(`🔊 Playing: **${sound.title}**`);
-
-      // Play the audio
-      try {
-        await this.voiceService.playAudio(
-          voiceChannel,
-          interaction.guild.id,
-          interaction.guild.voiceAdapterCreator,
-          audioBuffer,
-          sound.title
-        );
-        Logger.activity('PLAY', 'OK', interaction, play);
-
-        // Cache for next time AFTER playing starts (non-blocking)
-        if (!fromCache) {
-          this.cacheService.setAudio(sound.sound_url, audioBuffer).catch((error) => {
-            Logger.error('Failed to cache audio (non-critical)', { soundUrl: sound.sound_url }, error);
-          });
-        }
-
-        // Delete the status message after playing starts
-        setTimeout(async () => {
-          await interaction.deleteReply().catch(() => {});
-        }, 2000);
-
-        return true;
-      } catch (error) {
-        Logger.activity('PLAY', 'ERROR', interaction, { ...play, reason: error.message });
-
-        let errorMessage = `❌ Failed to play audio: ${error.message}`;
-
-        // Add helpful hints for common errors
-        if (error.message.includes('encryption')) {
-          errorMessage += '\n\n💡 **Encryption Error**: The bot is missing required audio encryption libraries (sodium/libsodium-wrappers/tweetnacl).';
-        } else if (error.message.includes('permission')) {
-          errorMessage += '\n\n💡 Make sure I have **Connect** and **Speak** permissions in your voice channel.';
-        } else if (error.message.includes('EACCES')) {
-          errorMessage += '\n\n💡 **Permission Error**: The bot cannot write temporary files.';
-        }
-
-        await interaction.editReply(errorMessage);
-        return false;
-      }
+      const audioPath = await this.getAudioPath(sound.sound_url);
+      await this.voiceService.play(channel, audioPath);
+      this.soundRepository.incrementPlays(sound.id);
+      Logger.activity('PLAY', 'OK', interaction, context);
+      return null;
     } catch (error) {
-      Logger.activity('PLAY', 'ERROR', interaction, { ...play, reason: error.message });
-      return false;
+      Logger.activity('PLAY', 'ERROR', interaction, { ...context, reason: error.message });
+      return error.message;
+    }
+  }
+
+  /**
+   * Soundboard button: play without posting a message, reply only on errors
+   * @param {Object} interaction - Button interaction
+   * @param {number} soundId
+   */
+  async handleButton(interaction, soundId) {
+    const sound = this.soundRepository.getById(interaction.guild.id, soundId);
+    if (!sound) {
+      Logger.activity('PLAY', 'ERROR', interaction, { via: 'button', reason: 'Sound not found' });
+      return interaction.reply({
+        content: '❌ This sound is no longer available!',
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
+    const { channel, error } = this.resolveVoiceChannel(interaction);
+    if (error) {
+      Logger.activity('PLAY', 'ERROR', interaction, {
+        via: 'button',
+        sound: cleanTitle(sound.title),
+        channel: channel?.name,
+        reason: error,
+      });
+      return interaction.reply({ content: `❌ ${error}`, flags: MessageFlags.Ephemeral });
+    }
+
+    await interaction.deferUpdate();
+    const playError = await this.play(interaction, channel, sound, 'button');
+    if (playError) {
+      await interaction.followUp({
+        content: `❌ Failed to play **${cleanTitle(sound.title)}**: ${playError}`,
+        flags: MessageFlags.Ephemeral,
+      });
     }
   }
 }

@@ -1,42 +1,35 @@
 {
-  "name": "pepe-grillo",
-  "version": "2.0.0",
-  "description": "Discord bot that plays sounds from myinstants.com with guild-specific storage and interactive UI",
+  "name": "myinstants-discord-soundboard",
+  "version": "3.0.0",
+  "description": "Discord soundboard bot for myinstants.com: search, save and play sounds in voice channels",
   "main": "src/index.js",
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "register": "node src/utils/register-commands.js",
-    "docker:build": "docker-compose build",
-    "docker:up": "docker-compose up -d",
-    "docker:down": "docker-compose down",
-    "docker:logs": "docker-compose logs -f bot"
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "dev": "node --env-file-if-exists=.env --watch src/index.js"
   },
   "keywords": [
     "discord",
-    "bot",
+    "discord-bot",
+    "soundboard",
     "myinstants",
-    "sound",
-    "postgres"
+    "sound"
   ],
-  "author": "",
+  "author": "Matías Véliz Bravo",
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/matiasvelizb/myinstants-discord-soundboard.git"
+  },
   "dependencies": {
     "@discordjs/voice": "^0.19.0",
     "@snazzah/davey": "^0.1.7",
-    "axios": "^1.6.5",
     "cheerio": "^1.0.0-rc.12",
-    "discord.js": "^14.14.1",
-    "dotenv": "^16.3.1",
-    "ffmpeg-static": "^5.2.0",
+    "discord.js": "^14.22.1",
     "impit": "^0.14.5",
-    "libsodium-wrappers": "^0.7.15",
-    "opusscript": "^0.1.1",
-    "pg": "^8.11.3",
-    "redis": "^4.6.13"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.2"
+    "opusscript": "^0.1.1"
   }
 }

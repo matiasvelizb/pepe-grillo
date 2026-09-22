@@ -1,6 +1,7 @@
-import dotenv from 'dotenv';
-
-dotenv.config();
+const intFromEnv = (name, fallback) => {
+  const value = parseInt(process.env[name], 10);
+  return Number.isNaN(value) ? fallback : value;
+};
 
 export const config = {
   // Discord Configuration
@@ -10,27 +11,15 @@ export const config = {
     guildId: process.env.GUILD_ID,
   },
 
-  // Database Configuration
-  database: {
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT) || 5432,
-    name: process.env.DB_NAME || 'pepe_grillo',
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'postgres',
-  },
-
-  // Redis Configuration
-  redis: {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT) || 6379,
-  },
+  // Storage: SQLite database and downloaded audio files live here
+  dataDir: process.env.DATA_DIR || 'data',
 
   // FlareSolverr Configuration (Cloudflare challenge solver)
   flaresolverr: {
     url: process.env.FLARESOLVERR_URL || '',
     enabled: process.env.FLARESOLVERR_ENABLED !== 'false',
-    maxTimeout: parseInt(process.env.FLARESOLVERR_MAX_TIMEOUT) || 60000,
-    sessionName: process.env.FLARESOLVERR_SESSION || 'pepe-grillo',
+    maxTimeout: intFromEnv('FLARESOLVERR_MAX_TIMEOUT', 60000),
+    sessionName: process.env.FLARESOLVERR_SESSION || 'myinstants-soundboard',
   },
 
   // Logging Configuration
@@ -43,8 +32,7 @@ export const config = {
 
   // Bot Configuration
   bot: {
-    maxSoundsPerGuild: 200, // Maximum sounds per guild
+    maxSoundsPerGuild: intFromEnv('MAX_SOUNDS_PER_GUILD', 1000), // 0 = unlimited
     autoDisconnectDelay: 15 * 60 * 1000, // 15 minutes
-    uiType: (process.env.UI_TYPE || 'BUTTONS').toUpperCase(), // 'BUTTONS' or 'SELECT'
   },
 };

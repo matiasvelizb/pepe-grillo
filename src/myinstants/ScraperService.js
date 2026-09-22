@@ -3,9 +3,12 @@ import { FlareSolverrClient } from './FlareSolverrClient.js';
 import { HttpClient } from './HttpClient.js';
 import { Logger } from '../utils/logger.js';
 
+const BASE_URL = 'https://www.myinstants.com';
+const SEARCH_CACHE_TTL = 10 * 60 * 1000;
+const SEARCH_CACHE_SIZE = 200;
+
 /**
  * Service for scraping sounds from MyInstants
- * Follows Single Responsibility Principle - only handles web scraping
  */
 export class ScraperService {
   /**
@@ -15,6 +18,23 @@ export class ScraperService {
   constructor(httpClient = new HttpClient(), flareSolverr = new FlareSolverrClient()) {
     this.http = httpClient;
     this.flareSolverr = flareSolverr;
+    /** @type {Map<string, {time: number, results: Array}>} */
+    this.searchCache = new Map();
+  }
+
+  /**
+   * Parse a MyInstants link (absolute or site-relative path)
+   * @param {string} input
+   * @returns {string|null} - Absolute URL, or null if it is not a myinstants.com link
+   */
+  static toMyInstantsUrl(input) {
+    try {
+      const url = new URL(input, BASE_URL);
+      const isMyInstants = url.hostname === 'myinstants.com' || url.hostname.endsWith('.myinstants.com');
+      return isMyInstants && ['https:', 'http:'].includes(url.protocol) ? url.href : null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -54,100 +74,84 @@ export class ScraperService {
   }
 
   /**
-   * Scrapes a MyInstants sound URL and extracts the audio file URL
+   * Search MyInstants by name. Results are cached in memory for a few minutes.
+   * Does not fall back to FlareSolverr: it is used by autocomplete, which must answer fast.
+   * @param {string} query
+   * @returns {Promise<Array<{title: string, pageUrl: string, soundUrl: string}>>}
+   */
+  async search(query) {
+    const key = query.trim().toLowerCase();
+    if (!key) return [];
+
+    const cached = this.searchCache.get(key);
+    if (cached && Date.now() - cached.time < SEARCH_CACHE_TTL) {
+      return cached.results;
+    }
+
+    const html = await this.http.getText(
+      `${BASE_URL}/en/search/?name=${encodeURIComponent(key)}`,
+      this.buildHeaders()
+    );
+    const $ = cheerio.load(html);
+
+    const results = $('.instant').map((_, el) => {
+      const link = $(el).find('a.instant-link');
+      const soundPath = $(el).find('.small-button').attr('onclick')?.match(/play\('([^']+)'/)?.[1];
+      const pageUrl = ScraperService.toMyInstantsUrl(link.attr('href') ?? '');
+      const soundUrl = soundPath && ScraperService.toMyInstantsUrl(soundPath);
+      return pageUrl && soundUrl ? { title: link.text().trim(), pageUrl, soundUrl } : null;
+    }).get();
+
+    this.searchCache.delete(key);
+    this.searchCache.set(key, { time: Date.now(), results });
+    if (this.searchCache.size > SEARCH_CACHE_SIZE) {
+      this.searchCache.delete(this.searchCache.keys().next().value);
+    }
+
+    Logger.debug('Searched MyInstants', { query: key, results: results.length });
+    return results;
+  }
+
+  /**
+   * Scrapes a MyInstants sound page and extracts the audio file URL
    * @param {string} url - The MyInstants page URL
    * @returns {Promise<{soundUrl: string, title: string}>}
    */
   async scrapeMyInstantsSound(url) {
     try {
-      // Validate URL is from myinstants.com
-      if (!url.includes('myinstants.com')) {
+      if (!ScraperService.toMyInstantsUrl(url)) {
         throw new Error('URL must be from myinstants.com');
       }
 
-      // Fetch the page
-      const html = await this.fetchPage(url);
+      const $ = cheerio.load(await this.fetchPage(url));
 
-      // Parse HTML with cheerio
-      const $ = cheerio.load(html);
+      const onclick = $('.small-button, .large-button').first().attr('onclick');
+      const candidates = [
+        $('a[download][href*="/media/sounds/"]').attr('href'),
+        onclick?.match(/play\('([^']+)'/)?.[1],
+        $('.small-button, .large-button').first().attr('data-url'),
+        $('source').attr('src'),
+        $('meta[property="og:audio"]').attr('content'),
+      ];
 
-      let soundUrl = null;
-
-      // Method 1: Look for the download button (most reliable)
-      const downloadButton = $('a[download][href*="/media/sounds/"]');
-      if (downloadButton.length > 0) {
-        soundUrl = downloadButton.attr('href');
-        Logger.debug('Found sound URL from download button', { soundUrl });
-      }
-
-      // Method 2: Find the play button with onclick attribute
-      if (!soundUrl) {
-        const soundButton = $('.small-button, .large-button').first();
-        const onclickAttr = soundButton.attr('onclick');
-
-        if (onclickAttr) {
-          const match = onclickAttr.match(/play\('([^']+)'/);
-          if (match && match[1]) {
-            soundUrl = match[1];
-            Logger.debug('Found sound URL from onclick', { soundUrl });
-          }
-        }
-      }
-
-      // Method 3: Try data-url attribute
-      if (!soundUrl) {
-        const soundButton = $('.small-button, .large-button').first();
-        soundUrl = soundButton.attr('data-url');
-        if (soundUrl) {
-          Logger.debug('Found sound URL from data-url', { soundUrl });
-        }
-      }
-
-      // Method 4: Look for audio source tag
-      if (!soundUrl) {
-        const audioSource = $('source').attr('src');
-        if (audioSource) {
-          soundUrl = audioSource;
-          Logger.debug('Found sound URL from audio source', { soundUrl });
-        }
-      }
-
-      // Method 5: Fall back to the Open Graph audio metadata
-      if (!soundUrl) {
-        soundUrl = $('meta[property="og:audio"]').attr('content');
-        if (soundUrl) {
-          Logger.debug('Found sound URL from og:audio', { soundUrl });
-        }
-      }
-
-      if (!soundUrl) {
+      const found = candidates.find(Boolean);
+      if (!found) {
         throw new Error('Could not find sound URL on the page');
       }
 
-      // Make sure we have a complete URL
-      if (!soundUrl.startsWith('http')) {
-        soundUrl = `https://www.myinstants.com${soundUrl}`;
+      const soundUrl = ScraperService.toMyInstantsUrl(found);
+      if (!soundUrl) {
+        throw new Error('Sound file is not hosted on myinstants.com');
       }
 
-      // Get the title of the sound
       const title =
         $('meta[property="og:title"]').attr('content') ||
-        $('title')
-          .text()
-          .replace(' - Instant Sound Button | Myinstants', '')
-          .trim() ||
+        $('title').text().trim() ||
         'Unknown Sound';
 
-      Logger.debug('Successfully scraped sound from MyInstants', {
-        title,
-        soundUrl,
-        sourceUrl: url,
-      });
+      Logger.debug('Scraped sound from MyInstants', { title, soundUrl, sourceUrl: url });
 
-      return {
-        soundUrl,
-        title,
-      };
+      return { soundUrl, title };
     } catch (error) {
       Logger.error('Error scraping MyInstants', { url }, error);
       throw new Error(`Failed to scrape sound: ${error.message}`);
@@ -164,7 +168,9 @@ export class ScraperService {
    */
   async downloadSound(soundUrl) {
     try {
-      Logger.debug('Downloading sound file', { soundUrl });
+      if (!ScraperService.toMyInstantsUrl(soundUrl)) {
+        throw new Error('Sound file is not hosted on myinstants.com');
+      }
 
       let buffer;
       try {
@@ -188,10 +194,7 @@ export class ScraperService {
         buffer = await this.http.getBuffer(soundUrl, this.buildHeaders());
       }
 
-      Logger.debug('Successfully downloaded sound', {
-        soundUrl,
-        bufferSize: buffer.length,
-      });
+      Logger.debug('Downloaded sound', { soundUrl, bufferSize: buffer.length });
 
       return buffer;
     } catch (error) {

@@ -1,224 +1,127 @@
-import { db } from '../database/connection.js';
 import { config } from '../config/config.js';
-import { Logger } from '../utils/logger.js';
+
+const ORDER_BY = {
+  popular: 'play_count DESC, created_at DESC, id DESC',
+  recent: 'created_at DESC, id DESC',
+};
 
 /**
- * Repository for managing guild sounds in the database
- * Follows Repository Pattern for data access abstraction
+ * Guild sound library stored in SQLite
  */
 export class SoundRepository {
   /**
-   * Add a new sound to a guild's collection
-   * @param {string} guildId - Discord guild ID
-   * @param {Object} soundData - Sound information
-   * @returns {Promise<Object|null>} - Created sound record (with removedTitle if the oldest
-   *   sound was auto-removed to make room) or null if duplicate
+   * @param {import('node:sqlite').DatabaseSync} db
    */
-  async addSound(guildId, soundData) {
-    const pool = db.getPool();
+  constructor(db) {
+    this.db = db;
+  }
 
+  /**
+   * Add a sound to a guild. When the guild is over its limit, the oldest sounds are removed.
+   * @param {string} guildId - Discord guild ID
+   * @param {{soundUrl: string, title: string, originalUrl: string}} soundData
+   * @returns {{sound: Object, created: boolean, removed: Object[]}}
+   */
+  add(guildId, { soundUrl, title, originalUrl }) {
+    this.db.exec('BEGIN');
     try {
-      // Check if sound already exists for this guild
-      const isDuplicate = await this.isDuplicate(guildId, soundData.soundUrl);
-      if (isDuplicate) {
-        Logger.debug('Sound already exists in database', {
-          guildId,
-          title: soundData.title,
-        });
-        return null;
-      }
+      const inserted = this.db.prepare(
+        `INSERT INTO sounds (guild_id, sound_url, title, original_url)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT (guild_id, sound_url) DO NOTHING
+         RETURNING *`
+      ).get(guildId, soundUrl, title, originalUrl);
 
-      // Check if we need to remove oldest sound (keep max maxSoundsPerGuild)
-      let removedTitle = null;
-      const currentCount = await this.getCount(guildId);
-      if (currentCount >= config.bot.maxSoundsPerGuild) {
-        removedTitle = await this.removeOldest(guildId);
-      }
+      const sound = inserted ?? this.db.prepare(
+        'SELECT * FROM sounds WHERE guild_id = ? AND sound_url = ?'
+      ).get(guildId, soundUrl);
 
-      // Insert new sound
-      const result = await pool.query(
-        `INSERT INTO guild_sounds (guild_id, sound_url, title, original_url)
-         VALUES ($1, $2, $3, $4)
-         RETURNING *`,
-        [guildId, soundData.soundUrl, soundData.title, soundData.originalUrl]
-      );
+      const removed = inserted ? this.trim(guildId) : [];
 
-      Logger.logDatabase('Sound added to database', guildId, {
-        title: soundData.title,
-        soundId: result.rows[0].id,
-      });
-      return { ...result.rows[0], removedTitle };
+      this.db.exec('COMMIT');
+      return { sound, created: Boolean(inserted), removed };
     } catch (error) {
-      Logger.error('Error adding sound to database', { guildId }, error);
+      this.db.exec('ROLLBACK');
       throw error;
     }
   }
 
   /**
-   * Get all sounds for a guild (most recent first)
-   * @param {string} guildId - Discord guild ID
-   * @returns {Promise<Array>} - Array of sound records
+   * Remove the oldest sounds of a guild beyond the configured limit
+   * @returns {Object[]} - Removed sound rows
    */
-  async getSounds(guildId) {
-    const pool = db.getPool();
+  trim(guildId) {
+    const limit = config.bot.maxSoundsPerGuild;
+    if (limit <= 0) return [];
 
-    try {
-      const result = await pool.query(
-        `SELECT * FROM guild_sounds
-         WHERE guild_id = $1
-         ORDER BY created_at DESC
-         LIMIT $2`,
-        [guildId, config.bot.maxSoundsPerGuild]
-      );
-
-      return result.rows;
-    } catch (error) {
-      Logger.error('Error fetching sounds from database', { guildId }, error);
-      throw error;
-    }
+    return this.db.prepare(
+      `DELETE FROM sounds WHERE id IN (
+         SELECT id FROM sounds WHERE guild_id = ?
+         ORDER BY created_at DESC, id DESC
+         LIMIT -1 OFFSET ?
+       )
+       RETURNING *`
+    ).all(guildId, limit);
   }
 
   /**
-   * Check if a sound already exists for a guild
+   * One page of a guild's sounds
    * @param {string} guildId - Discord guild ID
-   * @param {string} soundUrl - Direct URL to the audio file
-   * @returns {Promise<boolean>} - True if duplicate exists
+   * @param {'popular'|'recent'} sort
+   * @param {number} page - 0-indexed, clamped to the available pages
+   * @param {number} pageSize
+   * @returns {{sounds: Object[], total: number, page: number, pages: number}}
    */
-  async isDuplicate(guildId, soundUrl) {
-    const pool = db.getPool();
+  page(guildId, sort, page, pageSize) {
+    const total = this.count(guildId);
+    const pages = Math.max(1, Math.ceil(total / pageSize));
+    page = Math.min(Math.max(0, page), pages - 1);
 
-    try {
-      const result = await pool.query(
-        `SELECT COUNT(*) FROM guild_sounds
-         WHERE guild_id = $1 AND sound_url = $2`,
-        [guildId, soundUrl]
-      );
+    const sounds = this.db.prepare(
+      `SELECT * FROM sounds WHERE guild_id = ?
+       ORDER BY ${ORDER_BY[sort] ?? ORDER_BY.popular}
+       LIMIT ? OFFSET ?`
+    ).all(guildId, pageSize, page * pageSize);
 
-      return parseInt(result.rows[0].count) > 0;
-    } catch (error) {
-      Logger.error('Error checking for duplicate sound', { guildId }, error);
-      throw error;
-    }
+    return { sounds, total, page, pages };
   }
 
   /**
-   * Get count of sounds for a guild
-   * @param {string} guildId - Discord guild ID
-   * @returns {Promise<number>} - Count of sounds
+   * Sounds whose title contains the text, most played first (all sounds when text is empty)
    */
-  async getCount(guildId) {
-    const pool = db.getPool();
+  search(guildId, text, limit = 25) {
+    const pattern = `%${text.replace(/[\\%_]/g, '\\$&')}%`;
+    return this.db.prepare(
+      `SELECT * FROM sounds
+       WHERE guild_id = ? AND title LIKE ? ESCAPE '\\'
+       ORDER BY ${ORDER_BY.popular}
+       LIMIT ?`
+    ).all(guildId, pattern, limit);
+  }
 
-    try {
-      const result = await pool.query(
-        `SELECT COUNT(*) FROM guild_sounds WHERE guild_id = $1`,
-        [guildId]
-      );
+  count(guildId) {
+    return this.db.prepare('SELECT COUNT(*) AS n FROM sounds WHERE guild_id = ?').get(guildId).n;
+  }
 
-      return parseInt(result.rows[0].count);
-    } catch (error) {
-      Logger.error('Error getting sound count', { guildId }, error);
-      throw error;
-    }
+  getById(guildId, soundId) {
+    return this.db.prepare('SELECT * FROM sounds WHERE guild_id = ? AND id = ?').get(guildId, soundId) ?? null;
   }
 
   /**
-   * Remove the oldest sound for a guild
-   * @param {string} guildId - Discord guild ID
-   * @returns {Promise<string|null>} - Title of the removed sound, or null if none
+   * @returns {boolean} - True if deleted, false if not found
    */
-  async removeOldest(guildId) {
-    const pool = db.getPool();
-
-    try {
-      const result = await pool.query(
-        `DELETE FROM guild_sounds
-         WHERE id = (
-           SELECT id FROM guild_sounds
-           WHERE guild_id = $1
-           ORDER BY created_at ASC
-           LIMIT 1
-         )
-         RETURNING title`,
-        [guildId]
-      );
-
-      if (result.rows.length > 0) {
-        Logger.logDatabase('Removed oldest sound from guild', guildId, {
-          title: result.rows[0].title,
-        });
-        return result.rows[0].title;
-      }
-      return null;
-    } catch (error) {
-      Logger.error('Error removing oldest sound', { guildId }, error);
-      throw error;
-    }
+  delete(guildId, soundId) {
+    return this.db.prepare('DELETE FROM sounds WHERE guild_id = ? AND id = ?').run(guildId, soundId).changes > 0;
   }
 
   /**
-   * Get a specific sound by index (for button interactions)
-   * @param {string} guildId - Discord guild ID
-   * @param {number} index - Index of the sound (0-based)
-   * @returns {Promise<Object|null>} - Sound record or null
+   * Whether any guild still has this audio file saved
    */
-  async getSoundByIndex(guildId, index) {
-    const sounds = await this.getSounds(guildId);
-    return sounds[index] || null;
+  isAudioUsed(soundUrl) {
+    return Boolean(this.db.prepare('SELECT 1 FROM sounds WHERE sound_url = ? LIMIT 1').get(soundUrl));
   }
 
-  /**
-   * Get a specific sound by ID
-   * @param {string} guildId - Discord guild ID
-   * @param {number} soundId - Sound ID
-   * @returns {Promise<Object|null>} - Sound record or null
-   */
-  async getSoundById(guildId, soundId) {
-    const pool = db.getPool();
-
-    try {
-      const result = await pool.query(
-        `SELECT * FROM guild_sounds
-         WHERE guild_id = $1 AND id = $2`,
-        [guildId, soundId]
-      );
-
-      return result.rows[0] || null;
-    } catch (error) {
-      Logger.error('Error getting sound by ID', { guildId, soundId }, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Delete a specific sound by ID
-   * @param {string} guildId - Discord guild ID
-   * @param {number} soundId - Sound ID to delete
-   * @returns {Promise<boolean>} - True if deleted, false if not found
-   */
-  async deleteSound(guildId, soundId) {
-    const pool = db.getPool();
-
-    try {
-      const result = await pool.query(
-        `DELETE FROM guild_sounds
-         WHERE guild_id = $1 AND id = $2
-         RETURNING title`,
-        [guildId, soundId]
-      );
-
-      if (result.rows.length > 0) {
-        Logger.logDatabase('Sound deleted from guild', guildId, {
-          soundId,
-          title: result.rows[0].title,
-        });
-        return true;
-      }
-
-      return false;
-    } catch (error) {
-      Logger.error('Error deleting sound', { guildId, soundId }, error);
-      throw error;
-    }
+  incrementPlays(soundId) {
+    this.db.prepare('UPDATE sounds SET play_count = play_count + 1 WHERE id = ?').run(soundId);
   }
 }

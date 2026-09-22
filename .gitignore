@@ -18,9 +18,8 @@ node_modules/
 .env.production
 .env.local
 
-# Temp files
-temp/
-*.mp3
+# Runtime data (SQLite database, audio files)
+data/
 *.tmp
 
 # OS files

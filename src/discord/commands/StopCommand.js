@@ -1,22 +1,19 @@
-import { SlashCommandBuilder, MessageFlags } from 'discord.js';
+import { SlashCommandBuilder, InteractionContextType, MessageFlags } from 'discord.js';
 import { Logger } from '../../utils/logger.js';
 
 /**
  * Stop command - Stops playback and leaves voice channel
- * Follows Command Pattern
  */
 export class StopCommand {
   constructor(voiceService) {
     this.voiceService = voiceService;
   }
 
-  /**
-   * Get command definition
-   */
-  get definition() {
+  static get definition() {
     return new SlashCommandBuilder()
       .setName('stop')
-      .setDescription('Stop playing and leave the voice channel');
+      .setDescription('Stop playing and leave the voice channel')
+      .setContexts(InteractionContextType.Guild);
   }
 
   /**
@@ -25,8 +22,6 @@ export class StopCommand {
    */
   async execute(interaction) {
     try {
-      Logger.logCommand('stop', interaction);
-
       // Read the bot's channel before disconnecting
       const channel = interaction.guild.members.me?.voice?.channel?.name;
       const wasConnected = this.voiceService.disconnect(interaction.guild.id);
