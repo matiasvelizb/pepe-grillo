@@ -26,8 +26,8 @@ COPY --from=builder /app/node_modules ./node_modules
 # Copy application code
 COPY . .
 
-# Create temp directory for audio files with correct permissions
-RUN mkdir -p temp && chown -R node:node temp
+# Create temp and logs directories with correct permissions
+RUN mkdir -p temp logs && chown -R node:node temp logs
 
 # Set environment to production
 ENV NODE_ENV=production

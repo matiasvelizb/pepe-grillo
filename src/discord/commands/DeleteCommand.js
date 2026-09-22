@@ -1,5 +1,6 @@
 import { SlashCommandBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, MessageFlags } from 'discord.js';
 import { Logger } from '../../utils/logger.js';
+import { UIBuilder } from '../builders/UIBuilder.js';
 
 /**
  * Delete command - Deletes a sound from the guild using unified UI
@@ -44,7 +45,7 @@ export class DeleteCommand {
         });
       }
 
-      Logger.info('Delete UI displayed', {
+      Logger.debug('Delete UI displayed', {
         ...Logger.getUserContext(interaction),
       });
     } catch (error) {
@@ -74,7 +75,7 @@ export class DeleteCommand {
         soundId = parseInt(interaction.values ? interaction.values[0].split('_')[1] : customId.split('_')[1]);
       }
 
-      Logger.info('Sound selected for deletion', {
+      Logger.debug('Sound selected for deletion', {
         ...Logger.getUserContext(interaction),
         soundId,
       });
@@ -91,12 +92,7 @@ export class DeleteCommand {
         });
       }
 
-      // Clean up the title for display
-      let cleanTitle = sound.title
-        .replace(/\s*-\s*Botón de sonido\s*/gi, '')
-        .replace(/\s*-\s*Instant Sound Button\s*/gi, '')
-        .replace(/\s*\|\s*Myinstants\s*/gi, '')
-        .trim();
+      const cleanTitle = UIBuilder.cleanTitle(sound.title);
 
       // Create confirmation buttons
       const confirmButton = new ButtonBuilder()
@@ -113,7 +109,7 @@ export class DeleteCommand {
 
       const row = new ActionRowBuilder().addComponents(confirmButton, cancelButton);
 
-      Logger.info('Deletion confirmation requested', {
+      Logger.debug('Deletion confirmation requested', {
         ...Logger.getUserContext(interaction),
         soundId: sound.id,
         title: cleanTitle,
@@ -140,11 +136,12 @@ export class DeleteCommand {
    * @param {Object} interaction - Discord button interaction
    */
   async handleConfirmation(interaction) {
+    let cleanTitle = null;
     try {
       const [action, type, soundId] = interaction.customId.split('_');
 
       if (type === 'cancel') {
-        Logger.info('Sound deletion cancelled', {
+        Logger.debug('Sound deletion cancelled', {
           ...Logger.getUserContext(interaction),
           soundId,
         });
@@ -164,27 +161,19 @@ export class DeleteCommand {
         );
 
         if (!sound) {
+          Logger.activity('DELETE', 'ERROR', interaction, { reason: 'Sound not found' });
           return interaction.update({
             content: '❌ Sound not found! It may have already been deleted.',
             components: [],
           });
         }
 
-        // Clean up the title for display
-        let cleanTitle = sound.title
-          .replace(/\s*-\s*Botón de sonido\s*/gi, '')
-          .replace(/\s*-\s*Instant Sound Button\s*/gi, '')
-          .replace(/\s*\|\s*Myinstants\s*/gi, '')
-          .trim();
+        cleanTitle = UIBuilder.cleanTitle(sound.title);
 
         // Delete the sound
         await this.soundRepository.deleteSound(interaction.guild.id, parseInt(soundId));
 
-        Logger.info('Sound deleted successfully', {
-          ...Logger.getUserContext(interaction),
-          soundId,
-          title: cleanTitle,
-        });
+        Logger.activity('DELETE', 'OK', interaction, { sound: cleanTitle });
 
         await interaction.update({
           content: `✅ Successfully deleted: **${cleanTitle}**`,
@@ -194,14 +183,14 @@ export class DeleteCommand {
         // Refresh all active dashboards for this guild
         if (this.dashboardService) {
           await this.dashboardService.refreshDashboards(interaction.guild.id);
-          Logger.info('Dashboards refreshed after sound deletion', {
+          Logger.debug('Dashboards refreshed after sound deletion', {
             ...Logger.getUserContext(interaction),
             soundId,
           });
         }
       }
     } catch (error) {
-      Logger.error('Error handling delete confirmation', Logger.getUserContext(interaction), error);
+      Logger.activity('DELETE', 'ERROR', interaction, { sound: cleanTitle, reason: error.message });
       await interaction.update({
         content: `❌ An error occurred: ${error.message}`,
         components: [],

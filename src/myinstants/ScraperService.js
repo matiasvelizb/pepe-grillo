@@ -138,7 +138,7 @@ export class ScraperService {
           .trim() ||
         'Unknown Sound';
 
-      Logger.info('Successfully scraped sound from MyInstants', {
+      Logger.debug('Successfully scraped sound from MyInstants', {
         title,
         soundUrl,
         sourceUrl: url,

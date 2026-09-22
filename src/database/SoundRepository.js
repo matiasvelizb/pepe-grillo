@@ -11,7 +11,8 @@ export class SoundRepository {
    * Add a new sound to a guild's collection
    * @param {string} guildId - Discord guild ID
    * @param {Object} soundData - Sound information
-   * @returns {Promise<Object|null>} - Created sound record or null if duplicate
+   * @returns {Promise<Object|null>} - Created sound record (with removedTitle if the oldest
+   *   sound was auto-removed to make room) or null if duplicate
    */
   async addSound(guildId, soundData) {
     const pool = db.getPool();
@@ -20,17 +21,18 @@ export class SoundRepository {
       // Check if sound already exists for this guild
       const isDuplicate = await this.isDuplicate(guildId, soundData.soundUrl);
       if (isDuplicate) {
-        Logger.info('Sound already exists in database', {
+        Logger.debug('Sound already exists in database', {
           guildId,
           title: soundData.title,
         });
         return null;
       }
 
-      // Check if we need to remove oldest sound (keep max 20)
+      // Check if we need to remove oldest sound (keep max maxSoundsPerGuild)
+      let removedTitle = null;
       const currentCount = await this.getCount(guildId);
       if (currentCount >= config.bot.maxSoundsPerGuild) {
-        await this.removeOldest(guildId);
+        removedTitle = await this.removeOldest(guildId);
       }
 
       // Insert new sound
@@ -45,7 +47,7 @@ export class SoundRepository {
         title: soundData.title,
         soundId: result.rows[0].id,
       });
-      return result.rows[0];
+      return { ...result.rows[0], removedTitle };
     } catch (error) {
       Logger.error('Error adding sound to database', { guildId }, error);
       throw error;
@@ -123,7 +125,7 @@ export class SoundRepository {
   /**
    * Remove the oldest sound for a guild
    * @param {string} guildId - Discord guild ID
-   * @returns {Promise<void>}
+   * @returns {Promise<string|null>} - Title of the removed sound, or null if none
    */
   async removeOldest(guildId) {
     const pool = db.getPool();
@@ -145,7 +147,9 @@ export class SoundRepository {
         Logger.logDatabase('Removed oldest sound from guild', guildId, {
           title: result.rows[0].title,
         });
+        return result.rows[0].title;
       }
+      return null;
     } catch (error) {
       Logger.error('Error removing oldest sound', { guildId }, error);
       throw error;

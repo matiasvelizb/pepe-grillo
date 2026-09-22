@@ -42,7 +42,7 @@ export class DashboardService {
       // Track this dashboard
       this.trackDashboard(interaction.guild.id, interaction.channel.id, message.id, page, mode);
 
-      Logger.info('Dashboard displayed', {
+      Logger.debug('Dashboard displayed', {
         guildId: interaction.guild.id,
         channelId: interaction.channel.id,
         messageId: message.id,
@@ -106,7 +106,7 @@ export class DashboardService {
       return;
     }
 
-    Logger.info('Refreshing dashboards', {
+    Logger.debug('Refreshing dashboards', {
       guildId,
       dashboardCount: dashboards.length,
     });
@@ -176,7 +176,7 @@ export class DashboardService {
     const stillActive = results.filter(d => d !== null);
     if (stillActive.length < dashboards.length) {
       this.activeDashboards.set(guildId, stillActive);
-      Logger.info('Cleaned up inactive dashboards', {
+      Logger.debug('Cleaned up inactive dashboards', {
         guildId,
         removed: dashboards.length - stillActive.length,
         remaining: stillActive.length,
@@ -215,7 +215,7 @@ export class DashboardService {
     }
 
     if (totalRemoved > 0) {
-      Logger.info('Cleaned up old dashboards', {
+      Logger.debug('Cleaned up old dashboards', {
         removed: totalRemoved,
         activeGuilds: this.activeDashboards.size,
       });
@@ -231,6 +231,6 @@ export class DashboardService {
       this.cleanupOldDashboards();
     }, 30 * 60 * 1000);
 
-    Logger.info('Dashboard cleanup task started');
+    Logger.debug('Dashboard cleanup task started');
   }
 }

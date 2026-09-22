@@ -44,6 +44,18 @@ Check logs:
 docker compose logs -f bot
 ```
 
+Activity is also written to `./logs/pepe-grillo-YYYY-MM-DD.log` (one file per day, last 7 days kept):
+```
+2026-09-22 14:30:05 | ADD    | OK    | My Server (111) | matias (222) | Bruh sound
+2026-09-22 14:30:05 | DELETE | OK    | My Server (111) | matias (222) | Old sound | via: auto (limit 200)
+2026-09-22 14:30:06 | PLAY   | OK    | My Server (111) | matias (222) | Bruh sound | voice: General | via: /play
+2026-09-22 14:31:00 | ADD    | SKIP  | My Server (111) | matias (222) | Bruh sound | reason: Already exists
+2026-09-22 14:32:00 | PLAY   | ERROR | My Server (111) | matias (222) | - | via: button | error: User not in a voice channel
+2026-09-22 14:33:00 | STOP   | OK    | My Server (111) | matias (222) | - | voice: General
+```
+Actions: `PLAY` (via `/play`, `button` or `select`), `ADD`, `DELETE` (manual or `auto` when the server hits the sound limit), `STOP`. Status: `OK`, `ERROR`, `SKIP`.
+Create `./logs` before the first `docker compose up` so it is owned by your user (the container runs as uid 1000). Set `LOG_LEVEL=debug` for verbose internals.
+
 Stop:
 ```bash
 docker compose down

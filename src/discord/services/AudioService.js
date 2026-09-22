@@ -1,5 +1,6 @@
 import { MessageFlags } from 'discord.js';
 import { Logger } from '../../utils/logger.js';
+import { UIBuilder } from '../builders/UIBuilder.js';
 
 /**
  * Audio playback service with validation and error handling
@@ -15,12 +16,14 @@ export class AudioService {
   /**
    * Validate voice channel access and permissions
    * @param {Object} interaction - Discord interaction
+   * @param {Object} play - PLAY log context ({ sound, via })
    * @returns {Object|null} - Voice channel if valid, null otherwise (reply sent)
    */
-  async validateVoiceAccess(interaction) {
+  async validateVoiceAccess(interaction, play = {}) {
     // Check if user is in a voice channel
     const voiceChannel = interaction.member.voice.channel;
     if (!voiceChannel) {
+      Logger.activity('PLAY', 'ERROR', interaction, { ...play, reason: 'User not in a voice channel' });
       await interaction.reply({
         content: '❌ You need to be in a voice channel first!',
         flags: MessageFlags.Ephemeral,
@@ -31,6 +34,11 @@ export class AudioService {
     // Check bot permissions
     const permissions = voiceChannel.permissionsFor(interaction.client.user);
     if (!permissions.has('Connect') || !permissions.has('Speak')) {
+      Logger.activity('PLAY', 'ERROR', interaction, {
+        ...play,
+        channel: voiceChannel.name,
+        reason: 'Missing Connect/Speak permission',
+      });
       await interaction.reply({
         content: '❌ I need permissions to join and speak in your voice channel!',
         flags: MessageFlags.Ephemeral,
@@ -49,6 +57,8 @@ export class AudioService {
    * @returns {Promise<boolean>} - True if successful, false otherwise
    */
   async playSound(interaction, soundIdOrVoiceChannel, sound = null) {
+    const play = { via: typeof soundIdOrVoiceChannel === 'number' ? 'button' : 'select' };
+
     try {
       let voiceChannel;
 
@@ -60,7 +70,7 @@ export class AudioService {
         const soundId = soundIdOrVoiceChannel;
 
         // Validate voice access
-        voiceChannel = await this.validateVoiceAccess(interaction);
+        voiceChannel = await this.validateVoiceAccess(interaction, play);
         if (!voiceChannel) {
           return false; // Error reply already sent
         }
@@ -74,6 +84,7 @@ export class AudioService {
         sound = await soundRepo.getSoundById(interaction.guild.id, soundId);
 
         if (!sound) {
+          Logger.activity('PLAY', 'ERROR', interaction, { ...play, reason: 'Sound not found' });
           await interaction.editReply('❌ Sound not found!');
           return false;
         }
@@ -81,6 +92,9 @@ export class AudioService {
         // Pattern 2: Called with voiceChannel and sound
         voiceChannel = soundIdOrVoiceChannel;
       }
+
+      play.sound = UIBuilder.cleanTitle(sound.title);
+      play.channel = voiceChannel.name;
 
       // Try to get from cache first, download if cache miss
       let audioBuffer;
@@ -91,7 +105,7 @@ export class AudioService {
 
         if (audioBuffer) {
           fromCache = true;
-          Logger.info('Retrieved sound from cache', {
+          Logger.debug('Retrieved sound from cache', {
             ...Logger.getUserContext(interaction),
             title: sound.title,
             bufferSize: audioBuffer.length,
@@ -99,14 +113,14 @@ export class AudioService {
         } else {
           // Cache miss - download from MyInstants
           audioBuffer = await this.scraperService.downloadSound(sound.sound_url);
-          Logger.info('Downloaded sound from MyInstants (cache miss)', {
+          Logger.debug('Downloaded sound from MyInstants (cache miss)', {
             ...Logger.getUserContext(interaction),
             title: sound.title,
             bufferSize: audioBuffer.length,
           });
         }
       } catch (error) {
-        Logger.error('Failed to get sound', Logger.getUserContext(interaction), error);
+        Logger.activity('PLAY', 'ERROR', interaction, { ...play, reason: `Download failed: ${error.message}` });
         await interaction.editReply(
           `❌ Failed to get sound: ${error.message}`
         );
@@ -124,6 +138,7 @@ export class AudioService {
           audioBuffer,
           sound.title
         );
+        Logger.activity('PLAY', 'OK', interaction, play);
 
         // Cache for next time AFTER playing starts (non-blocking)
         if (!fromCache) {
@@ -139,7 +154,7 @@ export class AudioService {
 
         return true;
       } catch (error) {
-        Logger.error('Failed to play audio', Logger.getUserContext(interaction), error);
+        Logger.activity('PLAY', 'ERROR', interaction, { ...play, reason: error.message });
 
         let errorMessage = `❌ Failed to play audio: ${error.message}`;
 
@@ -156,7 +171,7 @@ export class AudioService {
         return false;
       }
     } catch (error) {
-      Logger.error('Unexpected error in playSound', Logger.getUserContext(interaction), error);
+      Logger.activity('PLAY', 'ERROR', interaction, { ...play, reason: error.message });
       return false;
     }
   }

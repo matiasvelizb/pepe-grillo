@@ -84,6 +84,18 @@ class Bot {
       this.dashboardService.startCleanupTask();
     });
 
+    this.client.on('guildCreate', (guild) => {
+      Logger.debug('Bot joined server', {
+        guildName: guild.name,
+        guildId: guild.id,
+        members: guild.memberCount,
+      });
+    });
+
+    this.client.on('guildDelete', (guild) => {
+      Logger.debug('Bot left server', { guildName: guild.name, guildId: guild.id });
+    });
+
     this.client.on('interactionCreate', async (interaction) => {
       try {
         if (interaction.isChatInputCommand()) {
