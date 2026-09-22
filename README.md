@@ -2,7 +2,20 @@
 
 Discord bot that plays sounds from [myinstants.com](https://www.myinstants.com) in voice channels.
 
-![Soundboard](/docs/example.png)
+<img src="docs/example.png" alt="Soundboard" width="520">
+
+## How it works
+
+```mermaid
+flowchart LR
+    N(["/play bruh"]) --> S{"saved?"}
+    L(["/play myinstants.com/en/instant/bruh/"]) --> S
+    S -->|no| M["myinstants.com"] -->|download once| D[("./data")]
+    S -->|yes| D
+    D --> V(["🔊 voice channel"])
+```
+
+Sounds are saved per server, so the next play comes straight from disk — and so does every button on the soundboard.
 
 ## Commands
 
@@ -45,7 +58,6 @@ Set in `.env`, see [`.env.example`](.env.example) for the full list.
 
 ## Notes
 
-- Audio is downloaded once and cached on disk, so repeat plays are instant
 - MyInstants sits behind Cloudflare: requests use a Chrome TLS fingerprint ([impit](https://github.com/apify/impit)), with [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) as fallback for JavaScript challenges
 - The bot leaves the voice channel after 15 minutes of inactivity
 - Activity is logged to `logs/soundboard-YYYY-MM-DD.log`, kept 7 days
