@@ -78,6 +78,10 @@ services:
       FLARESOLVERR_URL: http://flaresolverr:8191
       FLARESOLVERR_ENABLED: "true"
 
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TZ: America/Santiago
+
       # Node
       NODE_ENV: production
     depends_on:
@@ -88,7 +92,7 @@ services:
       flaresolverr:
         condition: service_healthy
     volumes:
-      # Mount for logs if needed
+      # Daily activity logs (kept 7 days)
       - ./logs:/app/logs
 
 volumes:

@@ -33,6 +33,14 @@ export const config = {
     sessionName: process.env.FLARESOLVERR_SESSION || 'pepe-grillo',
   },
 
+  // Logging Configuration
+  log: {
+    dir: process.env.LOG_DIR || 'logs',
+    retentionDays: 7, // Daily files kept, older ones are deleted
+    timezone: process.env.TZ || 'America/Santiago',
+    level: (process.env.LOG_LEVEL || 'info').toLowerCase(), // 'info' or 'debug'
+  },
+
   // Bot Configuration
   bot: {
     maxSoundsPerGuild: 200, // Maximum sounds per guild

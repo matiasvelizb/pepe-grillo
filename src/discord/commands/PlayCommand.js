@@ -1,5 +1,7 @@
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { Logger } from '../../utils/logger.js';
+import { UIBuilder } from '../builders/UIBuilder.js';
+import { config } from '../../config/config.js';
 
 /**
  * Play command - Plays a sound from MyInstants and saves it to the guild
@@ -33,6 +35,9 @@ export class PlayCommand {
    * @param {Object} interaction - Discord interaction
    */
   async execute(interaction) {
+    // Context shared by every PLAY log line of this command
+    const play = { via: '/play', channel: interaction.member?.voice?.channel?.name };
+
     try {
       const url = interaction.options.getString('url');
 
@@ -40,6 +45,7 @@ export class PlayCommand {
 
       // Validate it's a myinstants URL
       if (!url.includes('myinstants.com')) {
+        Logger.activity('PLAY', 'ERROR', interaction, { ...play, sound: url, reason: 'Invalid URL' });
         return interaction.reply({
           content: '❌ Please provide a valid myinstants.com URL!',
           flags: MessageFlags.Ephemeral,
@@ -49,6 +55,7 @@ export class PlayCommand {
       // Check if user is in a voice channel
       const voiceChannel = interaction.member.voice.channel;
       if (!voiceChannel) {
+        Logger.activity('PLAY', 'ERROR', interaction, { ...play, sound: url, reason: 'User not in a voice channel' });
         return interaction.reply({
           content: '❌ You need to be in a voice channel first!',
           flags: MessageFlags.Ephemeral,
@@ -58,6 +65,7 @@ export class PlayCommand {
       // Check bot permissions
       const permissions = voiceChannel.permissionsFor(interaction.client.user);
       if (!permissions.has('Connect') || !permissions.has('Speak')) {
+        Logger.activity('PLAY', 'ERROR', interaction, { ...play, sound: url, reason: 'Missing Connect/Speak permission' });
         return interaction.reply({
           content:
             '❌ I need permissions to join and speak in your voice channel!',
@@ -68,7 +76,7 @@ export class PlayCommand {
       // Defer reply since this might take a while
       await interaction.deferReply();
 
-      Logger.info('Scraping sound from MyInstants', {
+      Logger.debug('Scraping sound from MyInstants', {
         ...Logger.getUserContext(interaction),
         url,
       });
@@ -77,17 +85,19 @@ export class PlayCommand {
       let soundData;
       try {
         soundData = await this.scraperService.scrapeMyInstantsSound(url);
-        Logger.info('Successfully scraped sound', {
+        Logger.debug('Successfully scraped sound', {
           ...Logger.getUserContext(interaction),
           title: soundData.title,
           soundUrl: soundData.soundUrl,
         });
       } catch (error) {
-        Logger.error('Failed to scrape sound', Logger.getUserContext(interaction), error);
+        Logger.activity('PLAY', 'ERROR', interaction, { ...play, sound: url, reason: `Scrape failed: ${error.message}` });
         return interaction.editReply(
           `❌ Failed to scrape sound: ${error.message}`
         );
       }
+
+      const title = UIBuilder.cleanTitle(soundData.title);
 
       // Check for duplicates
       const isDuplicate = await this.soundRepository.isDuplicate(
@@ -96,10 +106,7 @@ export class PlayCommand {
       );
 
       if (isDuplicate) {
-        Logger.info('Sound already exists, playing anyway', {
-          ...Logger.getUserContext(interaction),
-          title: soundData.title,
-        });
+        Logger.activity('ADD', 'SKIP', interaction, { sound: title, reason: 'Already exists' });
         await interaction.editReply({
           content: `⚠️ **${soundData.title}** is already in this guild's sounds! Playing anyway...`,
         });
@@ -113,13 +120,13 @@ export class PlayCommand {
       let audioBuffer;
       try {
         audioBuffer = await this.scraperService.downloadSound(soundData.soundUrl);
-        Logger.info('Successfully downloaded sound', {
+        Logger.debug('Successfully downloaded sound', {
           ...Logger.getUserContext(interaction),
           title: soundData.title,
           bufferSize: audioBuffer.length,
         });
       } catch (error) {
-        Logger.error('Failed to download sound', Logger.getUserContext(interaction), error);
+        Logger.activity('PLAY', 'ERROR', interaction, { ...play, sound: title, reason: `Download failed: ${error.message}` });
         return interaction.editReply(
           `❌ Failed to download sound: ${error.message}`
         );
@@ -128,22 +135,35 @@ export class PlayCommand {
       // Save to database (only if not duplicate)
       if (!isDuplicate) {
         try {
-          await this.soundRepository.addSound(interaction.guild.id, {
+          const added = await this.soundRepository.addSound(interaction.guild.id, {
             soundUrl: soundData.soundUrl,
             title: soundData.title,
             originalUrl: url,
           });
 
+          if (!added) {
+            Logger.activity('ADD', 'SKIP', interaction, { sound: title, reason: 'Already exists' });
+          } else {
+            Logger.activity('ADD', 'OK', interaction, { sound: title });
+
+            if (added.removedTitle) {
+              Logger.activity('DELETE', 'OK', interaction, {
+                sound: UIBuilder.cleanTitle(added.removedTitle),
+                via: `auto (limit ${config.bot.maxSoundsPerGuild})`,
+              });
+            }
+          }
+
           // Refresh all active dashboards for this guild
           if (this.dashboardService) {
             await this.dashboardService.refreshDashboards(interaction.guild.id);
-            Logger.info('Dashboards refreshed after adding new sound', {
+            Logger.debug('Dashboards refreshed after adding new sound', {
               ...Logger.getUserContext(interaction),
               title: soundData.title,
             });
           }
         } catch (error) {
-          Logger.error('Failed to save sound to database', Logger.getUserContext(interaction), error);
+          Logger.activity('ADD', 'ERROR', interaction, { sound: title, reason: error.message });
           // Continue anyway, don't fail the command
         }
       }
@@ -161,13 +181,14 @@ export class PlayCommand {
           audioBuffer,
           soundData.title
         );
+        Logger.activity('PLAY', 'OK', interaction, { ...play, sound: title });
 
         // Delete the status message after playing starts
         setTimeout(async () => {
           await interaction.deleteReply().catch(() => {});
         }, 2000); // Reduced to 2 seconds for cleaner UX
       } catch (error) {
-        Logger.error('Failed to play audio', Logger.getUserContext(interaction), error);
+        Logger.activity('PLAY', 'ERROR', interaction, { ...play, sound: title, reason: error.message });
 
         let errorMessage = `❌ Failed to play audio: ${error.message}`;
 
@@ -183,7 +204,7 @@ export class PlayCommand {
         return interaction.editReply(errorMessage);
       }
     } catch (error) {
-      Logger.error('Error in play command', Logger.getUserContext(interaction), error);
+      Logger.activity('PLAY', 'ERROR', interaction, { ...play, reason: error.message });
       const replyMethod = interaction.deferred ? 'editReply' : 'reply';
       await interaction[replyMethod](
         `❌ An error occurred: ${error.message}`

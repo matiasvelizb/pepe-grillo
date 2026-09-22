@@ -41,7 +41,7 @@ export class PaginationHandler {
         newPage = currentPage + 1;
       }
 
-      Logger.info('Pagination button clicked', {
+      Logger.debug('Pagination button clicked', {
         ...Logger.getUserContext(interaction),
         currentPage,
         newPage,

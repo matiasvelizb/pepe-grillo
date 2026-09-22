@@ -27,24 +27,26 @@ export class StopCommand {
     try {
       Logger.logCommand('stop', interaction);
 
+      // Read the bot's channel before disconnecting
+      const channel = interaction.guild.members.me?.voice?.channel?.name;
       const wasConnected = this.voiceService.disconnect(interaction.guild.id);
 
       if (!wasConnected) {
-        Logger.info('Stop command called but bot not connected', Logger.getUserContext(interaction));
+        Logger.activity('STOP', 'ERROR', interaction, { reason: 'Bot not connected' });
         return interaction.reply({
           content: "❌ I'm not playing anything right now!",
           flags: MessageFlags.Ephemeral,
         });
       }
 
-      Logger.info('Successfully stopped playback and disconnected', Logger.getUserContext(interaction));
+      Logger.activity('STOP', 'OK', interaction, { channel });
 
       await interaction.reply({
         content: '⏹️ Stopped playing and left the voice channel.',
         flags: MessageFlags.Ephemeral,
       });
     } catch (error) {
-      Logger.error('Error in stop command', Logger.getUserContext(interaction), error);
+      Logger.activity('STOP', 'ERROR', interaction, { reason: error.message });
       await interaction.reply({
         content: `❌ An error occurred: ${error.message}`,
         flags: MessageFlags.Ephemeral,

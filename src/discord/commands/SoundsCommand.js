@@ -43,7 +43,7 @@ export class SoundsCommand {
         });
       }
 
-      Logger.info('Successfully displayed sounds dashboard', {
+      Logger.debug('Successfully displayed sounds dashboard', {
         ...Logger.getUserContext(interaction),
       });
     } catch (error) {

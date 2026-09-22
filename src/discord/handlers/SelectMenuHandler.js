@@ -1,5 +1,6 @@
 import { MessageFlags } from 'discord.js';
 import { Logger } from '../../utils/logger.js';
+import { UIBuilder } from '../builders/UIBuilder.js';
 
 /**
  * Select menu handler for playing sounds from the dashboard
@@ -23,7 +24,7 @@ export class SelectMenuHandler {
       const selectedValue = interaction.values[0];
       const soundId = parseInt(selectedValue.split('_')[1]);
 
-      Logger.info('Sound selected from menu', {
+      Logger.debug('Sound selected from menu', {
         ...Logger.getUserContext(interaction),
         soundId,
       });
@@ -35,6 +36,7 @@ export class SelectMenuHandler {
       );
 
       if (!sound) {
+        Logger.activity('PLAY', 'ERROR', interaction, { via: 'select', reason: 'Sound not found' });
         return interaction.reply({
           content: '❌ This sound is no longer available!',
           flags: MessageFlags.Ephemeral,
@@ -42,7 +44,10 @@ export class SelectMenuHandler {
       }
 
       // Validate voice access
-      const voiceChannel = await this.audioService.validateVoiceAccess(interaction);
+      const voiceChannel = await this.audioService.validateVoiceAccess(interaction, {
+        via: 'select',
+        sound: UIBuilder.cleanTitle(sound.title),
+      });
       if (!voiceChannel) {
         return; // Error reply already sent
       }
