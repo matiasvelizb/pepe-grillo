@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { config } from '../config/config.js';
 import { Logger } from '../utils/logger.js';
 
@@ -52,19 +51,22 @@ export class FlareSolverrClient {
    * @returns {Promise<object>} - Parsed FlareSolverr response
    */
   async command(payload) {
-    const response = await axios.post(`${this.url}/v1`, payload, {
+    const response = await fetch(`${this.url}/v1`, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
       // Give the browser room to solve the challenge before the request gives up
-      timeout: this.maxTimeout + 15000,
+      signal: AbortSignal.timeout(this.maxTimeout + 15000),
     });
+    const data = await response.json().catch(() => null);
 
-    if (response.data?.status !== 'ok') {
+    if (data?.status !== 'ok') {
       throw new Error(
-        `FlareSolverr returned status "${response.data?.status}": ${response.data?.message}`
+        `FlareSolverr returned status "${data?.status ?? response.status}": ${data?.message}`
       );
     }
 
-    return response.data;
+    return data;
   }
 
   /**

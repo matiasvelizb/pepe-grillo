@@ -1,39 +1,19 @@
-# Build stage
-FROM node:22.12-alpine AS builder
+FROM node:24-alpine
 
-WORKDIR /app
-
-# Install build dependencies for native modules
-RUN apk add --no-cache python3 make g++
-
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
-RUN npm install --only=production
-
-# Production stage
-FROM node:22.12-alpine
-
-# Install ffmpeg and runtime dependencies
+# ffmpeg transcodes audio for voice playback
 RUN apk add --no-cache ffmpeg
 
 WORKDIR /app
 
-# Copy dependencies from builder
-COPY --from=builder /app/node_modules ./node_modules
+COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
 
-# Copy application code
-COPY . .
+COPY src ./src
 
-# Create temp and logs directories with correct permissions
-RUN mkdir -p temp logs && chown -R node:node temp logs
+# data: SQLite database and audio files, logs: daily activity logs
+RUN mkdir -p data logs && chown -R node:node data logs
 
-# Set environment to production
 ENV NODE_ENV=production
-
-# Run as non-root user
 USER node
 
-# Start the bot
 CMD ["node", "src/index.js"]

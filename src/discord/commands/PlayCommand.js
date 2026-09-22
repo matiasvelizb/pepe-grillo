@@ -1,214 +1,172 @@
-import { SlashCommandBuilder, MessageFlags } from 'discord.js';
+import { SlashCommandBuilder, InteractionContextType, MessageFlags } from 'discord.js';
 import { Logger } from '../../utils/logger.js';
-import { UIBuilder } from '../builders/UIBuilder.js';
-import { config } from '../../config/config.js';
+import { cleanTitle, truncate } from '../builders/SoundboardView.js';
+import { ScraperService } from '../../myinstants/ScraperService.js';
+
+const AUTOCOMPLETE_LIMIT = 25;
+const CHOICE_MAX = 100; // Discord limit for choice name and value
+const SEARCH_TIMEOUT = 2000; // Autocomplete must answer within 3 seconds
 
 /**
- * Play command - Plays a sound from MyInstants and saves it to the guild
- * Follows Command Pattern - encapsulates all logic for this command
+ * /play <sound> - play a saved sound, a MyInstants link, or search MyInstants by name
  */
 export class PlayCommand {
-  constructor(scraperService, voiceService, soundRepository, dashboardService = null) {
+  constructor(scraperService, soundRepository, audioService, dashboardService) {
     this.scraperService = scraperService;
-    this.voiceService = voiceService;
     this.soundRepository = soundRepository;
+    this.audioService = audioService;
     this.dashboardService = dashboardService;
   }
 
-  /**
-   * Get command definition
-   */
-  get definition() {
+  static get definition() {
     return new SlashCommandBuilder()
       .setName('play')
       .setDescription('Play a sound from myinstants.com')
+      .setContexts(InteractionContextType.Guild)
       .addStringOption((option) =>
         option
-          .setName('url')
-          .setDescription('The myinstants.com URL')
+          .setName('sound')
+          .setDescription('Sound name or myinstants.com link')
           .setRequired(true)
+          .setAutocomplete(true)
       );
   }
 
   /**
-   * Execute the command
-   * @param {Object} interaction - Discord interaction
+   * Suggest saved sounds first, then live MyInstants search results
    */
+  async autocomplete(interaction) {
+    const query = interaction.options.getFocused().trim();
+    const choices = [];
+
+    if (/^https?:\/\//i.test(query)) {
+      if (ScraperService.toMyInstantsUrl(query) && query.length <= CHOICE_MAX) {
+        choices.push({ name: '🔗 Play this link', value: query });
+      }
+      return interaction.respond(choices);
+    }
+
+    for (const sound of this.soundRepository.search(interaction.guild.id, query, AUTOCOMPLETE_LIMIT)) {
+      choices.push({
+        name: truncate(`💾 ${cleanTitle(sound.title)} · ${sound.play_count} plays`, CHOICE_MAX),
+        value: `saved:${sound.id}`,
+      });
+    }
+
+    if (query && choices.length < AUTOCOMPLETE_LIMIT) {
+      const results = await Promise.race([
+        this.scraperService.search(query),
+        new Promise((resolve) => setTimeout(resolve, SEARCH_TIMEOUT, [])),
+      ]).catch((error) => {
+        Logger.debug('MyInstants search failed', { query, error: error.message });
+        return [];
+      });
+
+      for (const result of results) {
+        if (choices.length >= AUTOCOMPLETE_LIMIT) break;
+        const value = new URL(result.pageUrl).pathname;
+        if (value.length > CHOICE_MAX) continue;
+        choices.push({ name: truncate(`🌐 ${result.title}`, CHOICE_MAX), value });
+      }
+    }
+
+    await interaction.respond(choices);
+  }
+
   async execute(interaction) {
-    // Context shared by every PLAY log line of this command
-    const play = { via: '/play', channel: interaction.member?.voice?.channel?.name };
+    const input = interaction.options.getString('sound', true).trim();
+    const context = { via: '/play', channel: interaction.member?.voice?.channel?.name };
+
+    const { channel, error } = this.audioService.resolveVoiceChannel(interaction);
+    if (error) {
+      Logger.activity('PLAY', 'ERROR', interaction, { ...context, sound: input, reason: error });
+      return interaction.reply({ content: `❌ ${error}`, flags: MessageFlags.Ephemeral });
+    }
+
+    await interaction.deferReply();
+
+    let sound;
+    try {
+      sound = await this.resolveSound(interaction, input);
+    } catch (resolveError) {
+      Logger.activity('PLAY', 'ERROR', interaction, { ...context, sound: input, reason: resolveError.message });
+      return interaction.editReply(`❌ ${resolveError.message}`);
+    }
+
+    const title = cleanTitle(sound.title);
+    const playError = await this.audioService.play(interaction, channel, sound, '/play');
+    if (playError) {
+      return interaction.editReply(`❌ Failed to play **${title}**: ${playError}`);
+    }
+
+    await interaction.editReply(`🔊 Playing: **${title}**`);
+    setTimeout(() => interaction.deleteReply().catch(() => {}), 2000);
+  }
+
+  /**
+   * Turn the command input into a saved sound row, adding it from MyInstants if needed.
+   * Accepts `saved:<id>` (autocomplete), a MyInstants link or path, or free text.
+   */
+  async resolveSound(interaction, input) {
+    const guildId = interaction.guild.id;
+
+    if (input.startsWith('saved:')) {
+      const sound = this.soundRepository.getById(guildId, Number(input.slice('saved:'.length)));
+      if (!sound) throw new Error('That sound is no longer saved in this server.');
+      return sound;
+    }
+
+    const isLink = /^https?:\/\//i.test(input) || input.startsWith('/');
+    let pageUrl = isLink ? ScraperService.toMyInstantsUrl(input) : null;
+    if (isLink && !pageUrl) {
+      throw new Error('Only myinstants.com links are supported.');
+    }
+
+    if (!pageUrl) {
+      const [saved] = this.soundRepository.search(guildId, input, 1);
+      if (saved) return saved;
+
+      const [result] = await this.scraperService.search(input);
+      if (!result) throw new Error(`No MyInstants sound found for "${input}".`);
+      pageUrl = result.pageUrl;
+    }
+
+    return this.addFromMyInstants(interaction, pageUrl);
+  }
+
+  /**
+   * Scrape a MyInstants page, download its audio and save it to the guild
+   */
+  async addFromMyInstants(interaction, pageUrl) {
+    const { soundUrl, title } = await this.scraperService.scrapeMyInstantsSound(pageUrl);
+    const clean = cleanTitle(title);
 
     try {
-      const url = interaction.options.getString('url');
-
-      Logger.logCommand('play', interaction, { url });
-
-      // Validate it's a myinstants URL
-      if (!url.includes('myinstants.com')) {
-        Logger.activity('PLAY', 'ERROR', interaction, { ...play, sound: url, reason: 'Invalid URL' });
-        return interaction.reply({
-          content: '❌ Please provide a valid myinstants.com URL!',
-          flags: MessageFlags.Ephemeral,
-        });
-      }
-
-      // Check if user is in a voice channel
-      const voiceChannel = interaction.member.voice.channel;
-      if (!voiceChannel) {
-        Logger.activity('PLAY', 'ERROR', interaction, { ...play, sound: url, reason: 'User not in a voice channel' });
-        return interaction.reply({
-          content: '❌ You need to be in a voice channel first!',
-          flags: MessageFlags.Ephemeral,
-        });
-      }
-
-      // Check bot permissions
-      const permissions = voiceChannel.permissionsFor(interaction.client.user);
-      if (!permissions.has('Connect') || !permissions.has('Speak')) {
-        Logger.activity('PLAY', 'ERROR', interaction, { ...play, sound: url, reason: 'Missing Connect/Speak permission' });
-        return interaction.reply({
-          content:
-            '❌ I need permissions to join and speak in your voice channel!',
-          flags: MessageFlags.Ephemeral,
-        });
-      }
-
-      // Defer reply since this might take a while
-      await interaction.deferReply();
-
-      Logger.debug('Scraping sound from MyInstants', {
-        ...Logger.getUserContext(interaction),
-        url,
-      });
-
-      // Scrape the sound URL
-      let soundData;
-      try {
-        soundData = await this.scraperService.scrapeMyInstantsSound(url);
-        Logger.debug('Successfully scraped sound', {
-          ...Logger.getUserContext(interaction),
-          title: soundData.title,
-          soundUrl: soundData.soundUrl,
-        });
-      } catch (error) {
-        Logger.activity('PLAY', 'ERROR', interaction, { ...play, sound: url, reason: `Scrape failed: ${error.message}` });
-        return interaction.editReply(
-          `❌ Failed to scrape sound: ${error.message}`
-        );
-      }
-
-      const title = UIBuilder.cleanTitle(soundData.title);
-
-      // Check for duplicates
-      const isDuplicate = await this.soundRepository.isDuplicate(
-        interaction.guild.id,
-        soundData.soundUrl
-      );
-
-      if (isDuplicate) {
-        Logger.activity('ADD', 'SKIP', interaction, { sound: title, reason: 'Already exists' });
-        await interaction.editReply({
-          content: `⚠️ **${soundData.title}** is already in this guild's sounds! Playing anyway...`,
-        });
-      } else {
-        await interaction.editReply({
-          content: `🎵 Found: **${soundData.title}**\n⬇️ Downloading...`,
-        });
-      }
-
-      // Download the sound
-      let audioBuffer;
-      try {
-        audioBuffer = await this.scraperService.downloadSound(soundData.soundUrl);
-        Logger.debug('Successfully downloaded sound', {
-          ...Logger.getUserContext(interaction),
-          title: soundData.title,
-          bufferSize: audioBuffer.length,
-        });
-      } catch (error) {
-        Logger.activity('PLAY', 'ERROR', interaction, { ...play, sound: title, reason: `Download failed: ${error.message}` });
-        return interaction.editReply(
-          `❌ Failed to download sound: ${error.message}`
-        );
-      }
-
-      // Save to database (only if not duplicate)
-      if (!isDuplicate) {
-        try {
-          const added = await this.soundRepository.addSound(interaction.guild.id, {
-            soundUrl: soundData.soundUrl,
-            title: soundData.title,
-            originalUrl: url,
-          });
-
-          if (!added) {
-            Logger.activity('ADD', 'SKIP', interaction, { sound: title, reason: 'Already exists' });
-          } else {
-            Logger.activity('ADD', 'OK', interaction, { sound: title });
-
-            if (added.removedTitle) {
-              Logger.activity('DELETE', 'OK', interaction, {
-                sound: UIBuilder.cleanTitle(added.removedTitle),
-                via: `auto (limit ${config.bot.maxSoundsPerGuild})`,
-              });
-            }
-          }
-
-          // Refresh all active dashboards for this guild
-          if (this.dashboardService) {
-            await this.dashboardService.refreshDashboards(interaction.guild.id);
-            Logger.debug('Dashboards refreshed after adding new sound', {
-              ...Logger.getUserContext(interaction),
-              title: soundData.title,
-            });
-          }
-        } catch (error) {
-          Logger.activity('ADD', 'ERROR', interaction, { sound: title, reason: error.message });
-          // Continue anyway, don't fail the command
-        }
-      }
-
-      await interaction.editReply({
-        content: `🔊 Playing: **${soundData.title}**`,
-      });
-
-      // Play the audio
-      try {
-        await this.voiceService.playAudio(
-          voiceChannel,
-          interaction.guild.id,
-          interaction.guild.voiceAdapterCreator,
-          audioBuffer,
-          soundData.title
-        );
-        Logger.activity('PLAY', 'OK', interaction, { ...play, sound: title });
-
-        // Delete the status message after playing starts
-        setTimeout(async () => {
-          await interaction.deleteReply().catch(() => {});
-        }, 2000); // Reduced to 2 seconds for cleaner UX
-      } catch (error) {
-        Logger.activity('PLAY', 'ERROR', interaction, { ...play, sound: title, reason: error.message });
-
-        let errorMessage = `❌ Failed to play audio: ${error.message}`;
-
-        // Add helpful hints for common errors
-        if (error.message.includes('encryption')) {
-          errorMessage += '\n\n💡 **Encryption Error**: The bot is missing required audio encryption libraries (sodium/libsodium-wrappers/tweetnacl).';
-        } else if (error.message.includes('permission')) {
-          errorMessage += '\n\n💡 Make sure I have **Connect** and **Speak** permissions in your voice channel.';
-        } else if (error.message.includes('EACCES')) {
-          errorMessage += '\n\n💡 **Permission Error**: The bot cannot write temporary files.';
-        }
-
-        return interaction.editReply(errorMessage);
-      }
+      // Download before saving so sounds that can't be fetched never reach the soundboard
+      await this.audioService.getAudioPath(soundUrl);
     } catch (error) {
-      Logger.activity('PLAY', 'ERROR', interaction, { ...play, reason: error.message });
-      const replyMethod = interaction.deferred ? 'editReply' : 'reply';
-      await interaction[replyMethod](
-        `❌ An error occurred: ${error.message}`
-      ).catch(() => {});
+      Logger.activity('ADD', 'ERROR', interaction, { sound: clean, reason: error.message });
+      throw error;
     }
+
+    const { sound, created, removed } = this.soundRepository.add(interaction.guild.id, {
+      soundUrl,
+      title,
+      originalUrl: pageUrl,
+    });
+
+    if (!created) {
+      Logger.activity('ADD', 'SKIP', interaction, { sound: clean, reason: 'Already exists' });
+      return sound;
+    }
+
+    Logger.activity('ADD', 'OK', interaction, { sound: clean });
+    for (const old of removed) {
+      Logger.activity('DELETE', 'OK', interaction, { sound: cleanTitle(old.title), via: 'auto (limit)' });
+      await this.audioService.releaseAudio(old.sound_url);
+    }
+
+    await this.dashboardService.refresh(interaction.guild.id);
+    return sound;
   }
 }

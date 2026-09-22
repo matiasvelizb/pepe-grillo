@@ -2,13 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import { config } from '../config/config.js';
 
-const LOG_PREFIX = 'pepe-grillo-';
+const LOG_PREFIX = 'soundboard-';
 const LOG_SUFFIX = '.log';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Daily log file writer with retention
- * One file per local day: logs/pepe-grillo-YYYY-MM-DD.log
+ * One file per local day: logs/soundboard-YYYY-MM-DD.log
  * Files older than config.log.retentionDays are deleted when a new day starts
  */
 class LogFile {
@@ -225,31 +225,6 @@ export class Logger {
       userId: interaction.user?.id,
       username: interaction.user?.username,
     };
-  }
-
-  /**
-   * Log command execution (debug)
-   * @param {string} commandName - Name of the command
-   * @param {Object} interaction - Discord interaction
-   * @param {Object} additionalContext - Additional context
-   */
-  static logCommand(commandName, interaction, additionalContext = {}) {
-    const context = {
-      ...this.getUserContext(interaction),
-      action: commandName,
-      ...additionalContext,
-    };
-    this.debug(`Command executed: ${commandName}`, context);
-  }
-
-  /**
-   * Log database operation (debug)
-   * @param {string} operation - Database operation name
-   * @param {string} guildId - Guild ID
-   * @param {Object} additionalContext - Additional context
-   */
-  static logDatabase(operation, guildId, additionalContext = {}) {
-    this.debug(operation, { guildId, action: 'Database', ...additionalContext });
   }
 
   /**
